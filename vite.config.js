@@ -31,6 +31,7 @@ export default defineConfig({
         enabled: true
       },
       workbox: {
+        maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         skipWaiting: true,
         clientsClaim: true,
         cleanupOutdatedCaches: true,
@@ -52,8 +53,8 @@ export default defineConfig({
         ],
       },
       manifest: {
-        name: 'Global 84',
-        short_name: 'G84',
+        name: 'Global 85',
+        short_name: 'G85',
         start_url: '/',
         display: 'standalone',
         background_color: '#BA0C2F',

@@ -1,8 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Globe from "react-globe.gl";
 import * as THREE from "three";
 import { Routes, Route, Navigate, NavLink, useNavigate, useLocation } from "react-router-dom";
 import SplashScreen from "./components/SplashScreen.jsx";
+import { supabase, COHORT_ID, getOrCreateUserId } from "./lib/supabase.js";
+import { DEEP_DIVE } from "./data/countryDeepDive.js";
+
+const TRIP_DATE = import.meta.env.VITE_TRIP_DATE || null;
 
 const COLORS = {
   midnight: "#05050A",
@@ -12,35 +16,15 @@ const COLORS = {
   champagne: "#F3D58A",
   champagneLight: "#FFE8A3",
   ember: "#C65A2E",
-  holo: "#64D7FF",
-  magenta: "#FF4FD8",
-  electric: "#7DEBFF",
+  crimson: "#BA0C2F",
+  crimsonBright: "#E03050",
+  gold: "#C4962A",
+  goldLight: "#E8B84B",
 };
 
 function getInitialGlobeSize() {
-  if (typeof window === "undefined") return { width: 900, height: 790 };
-
-  const width = window.innerWidth;
-  const height = window.innerHeight;
-
-  if (width < 640) {
-    return {
-      width: Math.min(width + 130, 590),
-      height: Math.min(height * 0.58, 550),
-    };
-  }
-
-  if (width < 1024) {
-    return {
-      width: Math.min(width * 0.9, 800),
-      height: Math.min(height * 0.68, 700),
-    };
-  }
-
-  return {
-    width: Math.min(width * 0.64, 1020),
-    height: Math.min(height * 0.84, 820),
-  };
+  if (typeof window === "undefined") return { width: 1400, height: 900 };
+  return { width: window.innerWidth, height: window.innerHeight };
 }
 
 const DRAWER_NAV = [
@@ -614,7 +598,7 @@ function getSelectedVote(votes) {
 function getTopCountries(options, votes, count = 2) {
   const voteNames = Object.keys(votes || {});
 
-  if (!voteNames.length) return options.slice(0, count);
+  if (!voteNames.length) return [];
 
   const selected = voteNames.map(getCountryByName).filter(Boolean);
   const backups = options.filter((country) => !voteNames.includes(country.name));
@@ -879,11 +863,130 @@ function TabLink({ to, label, icon }) {
   );
 }
 
-function HomePage({ onAsk }) {
-  const navigate = useNavigate();
+function useLockedDestinations() {
+  const [locked, setLocked] = useState({ anchorWinner: null, companionWinner: null });
+
+  useEffect(() => {
+    if (!supabase) return;
+    supabase
+      .from("cohort_state")
+      .select("anchor_winner,companion_winner")
+      .eq("cohort_id", COHORT_ID)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data)
+          setLocked({ anchorWinner: data.anchor_winner || null, companionWinner: data.companion_winner || null });
+      });
+
+    const ch = supabase
+      .channel("home-state")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "cohort_state", filter: `cohort_id=eq.${COHORT_ID}` },
+        (payload) => {
+          if (payload.new)
+            setLocked({
+              anchorWinner: payload.new.anchor_winner || null,
+              companionWinner: payload.new.companion_winner || null,
+            });
+        }
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(ch);
+  }, []);
+
+  return locked;
+}
+
+function TripCountdownSection({ tripDate, anchorWinner, companionWinner }) {
+  const [timeLeft, setTimeLeft] = useState(null);
+
+  useEffect(() => {
+    function calc() {
+      const diff = new Date(tripDate) - new Date();
+      if (diff <= 0) return setTimeLeft({ days: 0, hours: 0, minutes: 0 });
+      setTimeLeft({
+        days: Math.floor(diff / 86400000),
+        hours: Math.floor((diff % 86400000) / 3600000),
+        minutes: Math.floor((diff % 3600000) / 60000),
+      });
+    }
+    calc();
+    const id = setInterval(calc, 60000);
+    return () => clearInterval(id);
+  }, [tripDate]);
+
+  if (!timeLeft) return null;
+  const aw = getCountryByName(anchorWinner);
+  const cw = getCountryByName(companionWinner);
 
   return (
-    <main className="px-5 py-5">
+    <section className="mx-5 mt-5">
+      <div
+        className="rounded-[2rem] overflow-hidden border"
+        style={{
+          borderColor: "rgba(196,150,42,0.24)",
+          background:
+            "linear-gradient(135deg, rgba(14,10,0,0.92), rgba(8,6,0,0.88)), radial-gradient(circle at 20% 0%, rgba(196,150,42,0.22), transparent 50%)",
+        }}
+      >
+        <div className="px-5 pt-5 pb-4">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="h-1.5 w-1.5 rounded-full bg-[#E8B84B] shadow-[0_0_10px_rgba(232,184,75,0.8)] animate-pulse" />
+            <div className="text-[9px] uppercase tracking-[0.28em] font-black" style={{ color: "#FFD880" }}>
+              Destination locked · T-minus
+            </div>
+          </div>
+
+          <div className="flex gap-5 items-end">
+            {[["days", timeLeft.days], ["hrs", timeLeft.hours], ["min", timeLeft.minutes]].map(([label, val]) => (
+              <div key={label}>
+                <div className="text-5xl font-black tabular-nums leading-none" style={{ color: COLORS.champagneLight }}>
+                  {String(val).padStart(2, "0")}
+                </div>
+                <div className="text-[10px] uppercase tracking-[0.18em] text-white/38 font-black mt-1">{label}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-3 mt-4">
+            {aw && (
+              <div
+                className="flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-black"
+                style={{ borderColor: "rgba(243,213,138,0.22)", background: "rgba(196,150,42,0.08)", color: COLORS.champagneLight }}
+              >
+                {countryIcon(aw)} {aw.name}
+              </div>
+            )}
+            {aw && cw && <span className="text-white/30 text-xs">+</span>}
+            {cw && (
+              <div
+                className="flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-black"
+                style={{ borderColor: "rgba(243,213,138,0.22)", background: "rgba(196,150,42,0.08)", color: COLORS.champagneLight }}
+              >
+                {countryIcon(cw)} {cw.name}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function HomePage({ onAsk }) {
+  const navigate = useNavigate();
+  const { anchorWinner, companionWinner } = useLockedDestinations();
+  const routeLocked = Boolean(anchorWinner && companionWinner);
+
+  return (
+    <main className="py-5">
+      {routeLocked && TRIP_DATE && (
+        <TripCountdownSection tripDate={TRIP_DATE} anchorWinner={anchorWinner} companionWinner={companionWinner} />
+      )}
+
+      <div className="px-5 mt-5">
       <section
         className="rounded-[2rem] p-5 overflow-hidden border border-white/10 shadow-2xl relative"
         style={{
@@ -972,6 +1075,7 @@ function HomePage({ onAsk }) {
           <SmallEventCard key={event.id} event={event} />
         ))}
       </section>
+      </div>
     </main>
   );
 }
@@ -1143,130 +1247,181 @@ function PorterPage() {
 
 function VotesPage() {
   const [missionIndex, setMissionIndex] = useState(0);
-  const [anchorVotes, setAnchorVotes] = useState({});
+  const [allVoteCounts, setAllVoteCounts] = useState({});
+  const [myVotes, setMyVotes] = useState({});
   const [anchorWinner, setAnchorWinner] = useState(null);
-  const [companionVotes, setCompanionVotes] = useState({});
   const [companionWinner, setCompanionWinner] = useState(null);
+  const [showCelebration, setShowCelebration] = useState(false);
+  const userId = useMemo(() => getOrCreateUserId(), []);
 
-  const anchorFinalists = useMemo(() => getTopCountries(ANCHOR_COUNTRIES, anchorVotes, 2), [anchorVotes]);
+  const anchorVotes = allVoteCounts["anchor-longlist"] || {};
+  const companionVotes = allVoteCounts["companion-longlist"] || {};
 
-  const companionOptions = useMemo(() => {
-    return buildCompanionOptions(anchorWinner?.name || anchorFinalists[0]?.name || "Japan");
-  }, [anchorFinalists, anchorWinner]);
-
-  const companionFinalists = useMemo(() => {
-    return getTopCountries(companionOptions, companionVotes, 2);
-  }, [companionOptions, companionVotes]);
-
-  const missions = useMemo(
-    () => [
-      {
-        id: "anchor-longlist",
-        eyebrow: "Mission 01",
-        title: "Select the Anchor Country",
-        shortTitle: "Anchor Longlist",
-        mode: "anchor-longlist",
-        status: missionIndex === 0 ? "active" : "complete",
-        instruction: "Choose the developed country that should define the Global 85 trip. Top two advance to final selection.",
-        options: ANCHOR_COUNTRIES,
-        votes: anchorVotes,
-        selectedName: getSelectedVote(anchorVotes),
-        voteLabel: "Cast Anchor Vote",
-        nextLabel: "Advance Top Two",
-        canAdvance: Object.keys(anchorVotes).length > 0,
-        finalistNames: anchorFinalists.map((country) => country.name),
-      },
-      {
-        id: "anchor-final",
-        eyebrow: "Mission 02",
-        title: "Finalize the Anchor Country",
-        shortTitle: "Anchor Final",
-        mode: "anchor-final",
-        status: missionIndex < 1 ? "locked" : missionIndex === 1 ? "active" : "complete",
-        instruction: "The top two anchor countries are now head-to-head. Winner becomes Country A.",
-        options: anchorFinalists.length ? anchorFinalists : ANCHOR_COUNTRIES.slice(0, 2),
-        votes: anchorWinner ? { [anchorWinner.name]: 1 } : {},
-        selectedName: anchorWinner?.name,
-        voteLabel: "Lock Anchor Country",
-        nextLabel: "Generate Companion List",
-        canAdvance: Boolean(anchorWinner),
-        finalistNames: anchorFinalists.map((country) => country.name),
-      },
-      {
-        id: "companion-longlist",
-        eyebrow: "Mission 03",
-        title: "Select the Companion Country",
-        shortTitle: "Companion Longlist",
-        mode: "companion-longlist",
-        status: missionIndex < 2 ? "locked" : missionIndex === 2 ? "active" : "complete",
-        instruction: anchorWinner
-          ? `Porter generated this companion list based on ${anchorWinner.name}: regional fit, flight logic, cost balance, cultural contrast, and trip pacing.`
-          : "Porter will generate this list after the anchor country is selected.",
-        options: companionOptions,
-        votes: companionVotes,
-        selectedName: getSelectedVote(companionVotes),
-        voteLabel: "Cast Companion Vote",
-        nextLabel: "Advance Top Two",
-        canAdvance: Object.keys(companionVotes).length > 0,
-        finalistNames: companionFinalists.map((country) => country.name),
-      },
-      {
-        id: "companion-final",
-        eyebrow: "Mission 04",
-        title: "Finalize the Companion Country",
-        shortTitle: "Companion Final",
-        mode: "companion-final",
-        status: missionIndex < 3 ? "locked" : "active",
-        instruction: "The top two companion countries are now head-to-head. Winner becomes Country B.",
-        options: companionFinalists.length ? companionFinalists : companionOptions.slice(0, 2),
-        votes: companionWinner ? { [companionWinner.name]: 1 } : {},
-        selectedName: companionWinner?.name,
-        voteLabel: "Lock Companion Country",
-        nextLabel: "Complete Destination Vote",
-        canAdvance: Boolean(companionWinner),
-        finalistNames: companionFinalists.map((country) => country.name),
-      },
-    ],
-    [
-      anchorFinalists,
-      anchorVotes,
-      anchorWinner,
-      companionFinalists,
-      companionOptions,
-      companionVotes,
-      companionWinner,
-      missionIndex,
-    ]
-  );
-
-  const activeMission = missions[missionIndex];
-
-  function handleVote(country) {
-    if (!activeMission || activeMission.status !== "active") return;
-
-    if (activeMission.mode === "anchor-longlist") setAnchorVotes({ [country.name]: 1 });
-    if (activeMission.mode === "anchor-final") setAnchorWinner(country);
-    if (activeMission.mode === "companion-longlist") setCompanionVotes({ [country.name]: 1 });
-    if (activeMission.mode === "companion-final") setCompanionWinner(country);
+  function parseVotes(rows) {
+    const counts = {};
+    const mine = {};
+    rows.forEach((v) => {
+      if (!counts[v.vote_phase]) counts[v.vote_phase] = {};
+      counts[v.vote_phase][v.country_name] = (counts[v.vote_phase][v.country_name] || 0) + 1;
+      if (v.user_id === userId) mine[v.vote_phase] = v.country_name;
+    });
+    return { counts, mine };
   }
 
-  function handleAdvance() {
+  useEffect(() => {
+    if (!supabase) return;
+
+    async function load() {
+      const [{ data: votes }, { data: state }] = await Promise.all([
+        supabase.from("cohort_votes").select("vote_phase,country_name,user_id").eq("cohort_id", COHORT_ID),
+        supabase.from("cohort_state").select("*").eq("cohort_id", COHORT_ID).maybeSingle(),
+      ]);
+
+      if (votes) {
+        const { counts, mine } = parseVotes(votes);
+        setAllVoteCounts(counts);
+        setMyVotes(mine);
+      }
+      if (state) {
+        setMissionIndex(state.mission_index ?? 0);
+        if (state.anchor_winner) setAnchorWinner(getCountryByName(state.anchor_winner));
+        if (state.companion_winner) {
+          const cw = getCountryByName(state.companion_winner);
+          if (cw) setCompanionWinner(cw);
+        }
+      }
+    }
+    load();
+
+    const channel = supabase
+      .channel(`cohort-${COHORT_ID}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "cohort_votes", filter: `cohort_id=eq.${COHORT_ID}` },
+        async () => {
+          const { data: votes } = await supabase
+            .from("cohort_votes")
+            .select("vote_phase,country_name,user_id")
+            .eq("cohort_id", COHORT_ID);
+          if (votes) {
+            const { counts, mine } = parseVotes(votes);
+            setAllVoteCounts(counts);
+            setMyVotes(mine);
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "cohort_state", filter: `cohort_id=eq.${COHORT_ID}` },
+        (payload) => {
+          const s = payload.new;
+          if (!s) return;
+          setMissionIndex(s.mission_index ?? 0);
+          if (s.anchor_winner) setAnchorWinner(getCountryByName(s.anchor_winner));
+          if (s.companion_winner) {
+            const cw = getCountryByName(s.companion_winner);
+            if (cw) {
+              setCompanionWinner(cw);
+              setShowCelebration(true);
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, [userId]);
+
+  async function pushStateToSupabase(patch) {
+    if (!supabase) return;
+    await supabase
+      .from("cohort_state")
+      .upsert({ cohort_id: COHORT_ID, ...patch, updated_at: new Date().toISOString() }, { onConflict: "cohort_id" });
+  }
+
+  function handleVote(country) {
+    const phase = activeMission?.mode;
+    if (!phase || activeMission.status !== "active") return;
+
+    const prevVote = myVotes[phase];
+    setMyVotes((prev) => ({ ...prev, [phase]: country.name }));
+    setAllVoteCounts((prev) => {
+      const pv = { ...(prev[phase] || {}) };
+      if (prevVote && pv[prevVote]) pv[prevVote] = Math.max(0, pv[prevVote] - 1);
+      pv[country.name] = (pv[country.name] || 0) + 1;
+      return { ...prev, [phase]: pv };
+    });
+
+    if (supabase) {
+      supabase
+        .from("cohort_votes")
+        .upsert(
+          { cohort_id: COHORT_ID, vote_phase: phase, country_name: country.name, user_id: userId },
+          { onConflict: "cohort_id,vote_phase,user_id" }
+        )
+        .then(() => {});
+    }
+
+    if (phase === "anchor-final") setAnchorWinner(country);
+    if (phase === "companion-final") setCompanionWinner(country);
+  }
+
+  async function handleAdvance() {
     if (!activeMission?.canAdvance) return;
 
     if (missionIndex === 0) {
       setMissionIndex(1);
+      pushStateToSupabase({ mission_index: 1 });
       return;
     }
 
     if (missionIndex === 1) {
-      setCompanionVotes({});
-      setCompanionWinner(null);
-      setMissionIndex(2);
+      const finalVotes = allVoteCounts["anchor-final"] || {};
+      const topName = Object.entries(finalVotes).sort((a, b) => b[1] - a[1])[0]?.[0] || anchorWinner?.name;
+      const winner = topName ? getCountryByName(topName) : anchorFinalists[0];
+      if (winner) {
+        setAnchorWinner(winner);
+        setAllVoteCounts((prev) => {
+          const next = { ...prev };
+          delete next["companion-longlist"];
+          delete next["companion-final"];
+          return next;
+        });
+        setMyVotes((prev) => {
+          const next = { ...prev };
+          delete next["companion-longlist"];
+          delete next["companion-final"];
+          return next;
+        });
+        setMissionIndex(2);
+        pushStateToSupabase({ mission_index: 2, anchor_winner: winner.name });
+        if (supabase) {
+          supabase
+            .from("cohort_votes")
+            .delete()
+            .eq("cohort_id", COHORT_ID)
+            .in("vote_phase", ["companion-longlist", "companion-final"])
+            .then(() => {});
+        }
+      }
       return;
     }
 
     if (missionIndex === 2) {
       setMissionIndex(3);
+      pushStateToSupabase({ mission_index: 3 });
+      return;
+    }
+
+    if (missionIndex === 3) {
+      const finalVotes = allVoteCounts["companion-final"] || {};
+      const topName = Object.entries(finalVotes).sort((a, b) => b[1] - a[1])[0]?.[0] || companionWinner?.name;
+      const winner = topName ? getCountryByName(topName) : companionFinalists[0];
+      if (winner) {
+        setCompanionWinner(winner);
+        setShowCelebration(true);
+        pushStateToSupabase({ companion_winner: winner.name });
+      }
     }
   }
 
@@ -1281,11 +1436,102 @@ function VotesPage() {
 
   function resetProtocol() {
     setMissionIndex(0);
-    setAnchorVotes({});
+    setAllVoteCounts({});
+    setMyVotes({});
     setAnchorWinner(null);
-    setCompanionVotes({});
     setCompanionWinner(null);
+    setShowCelebration(false);
+    if (supabase) {
+      supabase.from("cohort_votes").delete().eq("cohort_id", COHORT_ID).then(() => {});
+      pushStateToSupabase({ mission_index: 0, anchor_winner: null, companion_winner: null });
+    }
   }
+
+  const anchorFinalists = useMemo(() => getTopCountries(ANCHOR_COUNTRIES, anchorVotes, 2), [anchorVotes]);
+
+  const companionOptions = useMemo(
+    () => buildCompanionOptions(anchorWinner?.name || anchorFinalists[0]?.name || "Japan"),
+    [anchorFinalists, anchorWinner]
+  );
+
+  const companionFinalists = useMemo(
+    () => getTopCountries(companionOptions, companionVotes, 2),
+    [companionOptions, companionVotes]
+  );
+
+  const missions = useMemo(
+    () => [
+      {
+        id: "anchor-longlist",
+        eyebrow: "Vote 01",
+        title: "Vote for Country A",
+        shortTitle: "List A",
+        mode: "anchor-longlist",
+        status: missionIndex === 0 ? "active" : "complete",
+        instruction: "Pick the country that should anchor the Global 85 trip. The two most-voted advance to Vote 02.",
+        options: ANCHOR_COUNTRIES,
+        votes: anchorVotes,
+        selectedName: myVotes["anchor-longlist"],
+        voteLabel: "Cast First Vote",
+        nextLabel: "Advance Top Two",
+        canAdvance: Object.keys(anchorVotes).length > 0,
+        finalistNames: anchorFinalists.map((c) => c.name),
+      },
+      {
+        id: "anchor-final",
+        eyebrow: "Vote 02",
+        title: "Lock in Country A",
+        shortTitle: "List A Final",
+        mode: "anchor-final",
+        status: missionIndex < 1 ? "locked" : missionIndex === 1 ? "active" : "complete",
+        instruction: "Top two from Vote 01 head-to-head. The winner becomes Country A and unlocks List B.",
+        options: anchorFinalists.length ? anchorFinalists : ANCHOR_COUNTRIES.slice(0, 2),
+        votes: allVoteCounts["anchor-final"] || {},
+        selectedName: myVotes["anchor-final"] || anchorWinner?.name,
+        voteLabel: "Lock Country A",
+        nextLabel: "Generate List B",
+        canAdvance: Object.keys(allVoteCounts["anchor-final"] || {}).length > 0 || Boolean(anchorWinner),
+        finalistNames: anchorFinalists.map((c) => c.name),
+      },
+      {
+        id: "companion-longlist",
+        eyebrow: "Vote 03",
+        title: "Vote for Country B",
+        shortTitle: "List B",
+        mode: "companion-longlist",
+        status: missionIndex < 2 ? "locked" : missionIndex === 2 ? "active" : "complete",
+        instruction: anchorWinner
+          ? `Porter built List B around ${anchorWinner.name} — matched on flight logic, cost balance, cultural contrast, and trip pacing.`
+          : "List B will be generated once Country A is locked.",
+        options: companionOptions,
+        votes: companionVotes,
+        selectedName: myVotes["companion-longlist"],
+        voteLabel: "Cast Vote",
+        nextLabel: "Advance Top Two",
+        canAdvance: Object.keys(companionVotes).length > 0,
+        finalistNames: companionFinalists.map((c) => c.name),
+      },
+      {
+        id: "companion-final",
+        eyebrow: "Vote 04",
+        title: "Lock in Country B",
+        shortTitle: "List B Final",
+        mode: "companion-final",
+        status: missionIndex < 3 ? "locked" : "active",
+        instruction: "Top two from Vote 03 head-to-head. The winner becomes Country B — destination locked.",
+        options: companionFinalists.length ? companionFinalists : companionOptions.slice(0, 2),
+        votes: allVoteCounts["companion-final"] || {},
+        selectedName: myVotes["companion-final"] || companionWinner?.name,
+        voteLabel: "Lock Country B",
+        nextLabel: "Lock Destination",
+        canAdvance: Object.keys(allVoteCounts["companion-final"] || {}).length > 0 || Boolean(companionWinner),
+        finalistNames: companionFinalists.map((c) => c.name),
+      },
+    ],
+    [missionIndex, anchorVotes, anchorFinalists, companionOptions, companionVotes, companionFinalists, anchorWinner, companionWinner, myVotes, allVoteCounts]
+  );
+
+  const activeMission = missions[missionIndex];
 
   return (
     <main className="fixed inset-0 z-[999] overflow-hidden">
@@ -1295,11 +1541,13 @@ function VotesPage() {
         activeMission={activeMission}
         anchorWinner={anchorWinner}
         companionWinner={companionWinner}
+        showCelebration={showCelebration}
         onVote={handleVote}
         onAdvance={handleAdvance}
         onMissionJump={handleMissionJump}
         onPorterPick={porterPick}
         onReset={resetProtocol}
+        onDismissCelebration={() => setShowCelebration(false)}
       />
     </main>
   );
@@ -1311,18 +1559,23 @@ function DestinationChamber({
   activeMission,
   anchorWinner,
   companionWinner,
+  showCelebration,
   onVote,
   onAdvance,
   onMissionJump,
   onPorterPick,
   onReset,
+  onDismissCelebration,
 }) {
   const navigate = useNavigate();
   const globeRef = useRef(null);
   const firstPovRef = useRef(true);
+  const globeRotRafRef = useRef(null);
   const [globeSize, setGlobeSize] = useState(() => getInitialGlobeSize());
   const [activeCountry, setActiveCountry] = useState(null);
   const [pulseKey, setPulseKey] = useState(0);
+  const [worldGeoData, setWorldGeoData] = useState({ features: [] });
+  const [deepDiveCountry, setDeepDiveCountry] = useState(null);
 
   const countries = activeMission.options;
   const selectedName = activeMission.selectedName;
@@ -1360,6 +1613,34 @@ function DestinationChamber({
   }, []);
 
   useEffect(() => {
+    // Rotate the globe Group on its own Y axis so the floor stays stationary
+    const startId = setTimeout(() => {
+      const globe = globeRef.current;
+      if (!globe) return;
+      const scene = typeof globe.scene === "function" ? globe.scene() : null;
+      if (!scene) return;
+
+      const tick = () => {
+        const grp = scene.children.find((c) => c.isGroup);
+        if (grp) grp.rotation.y += 0.00028;
+        globeRotRafRef.current = requestAnimationFrame(tick);
+      };
+      globeRotRafRef.current = requestAnimationFrame(tick);
+    }, 500);
+
+    return () => {
+      clearTimeout(startId);
+      if (globeRotRafRef.current) cancelAnimationFrame(globeRotRafRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    fetch("https://raw.githubusercontent.com/vasturiano/react-globe.gl/master/example/datasets/ne_110m_admin_0_countries.geojson")
+      .then((r) => r.json())
+      .then((data) => setWorldGeoData(data));
+  }, []);
+
+  useEffect(() => {
     if (!globeRef.current || !activeCountry) return;
 
     const globe = globeRef.current;
@@ -1367,11 +1648,15 @@ function DestinationChamber({
     firstPovRef.current = false;
 
     if (typeof globe.pointOfView === "function") {
+      const scene = typeof globe.scene === "function" ? globe.scene() : null;
+      const grp = scene?.children.find((c) => c.isGroup);
+      const rotOffsetDeg = grp ? (grp.rotation.y * 180 / Math.PI) : 0;
+
       globe.pointOfView(
         {
           lat: activeCountry.lat,
-          lng: activeCountry.lng,
-          altitude: isMobile ? 1.9 : 1.52,
+          lng: activeCountry.lng + rotOffsetDeg,
+          altitude: isMobile ? 2.3 : 1.9,
         },
         duration
       );
@@ -1385,8 +1670,7 @@ function DestinationChamber({
     const frame = requestAnimationFrame(() => {
       const controls = typeof globe.controls === "function" ? globe.controls() : null;
       if (controls) {
-        controls.autoRotate = true;
-        controls.autoRotateSpeed = 0.16;
+        controls.autoRotate = false;
         controls.enableZoom = true;
         controls.enablePan = false;
         controls.minDistance = 155;
@@ -1395,12 +1679,12 @@ function DestinationChamber({
 
       const material = typeof globe.globeMaterial === "function" ? globe.globeMaterial() : null;
       if (material) {
-        material.color = new THREE.Color("#bff8ff");
-        material.emissive = new THREE.Color("#5eeaff");
-        material.emissiveIntensity = 0.42;
+        material.color = new THREE.Color("#E8B84B");
+        material.emissive = new THREE.Color("#C4962A");
+        material.emissiveIntensity = 0.55;
         material.transparent = true;
-        material.opacity = 0.82;
-        material.wireframe = false;
+        material.opacity = 0.28;
+        material.wireframe = true;
         material.depthWrite = false;
         material.depthTest = true;
         material.side = THREE.DoubleSide;
@@ -1409,22 +1693,94 @@ function DestinationChamber({
 
       const scene = typeof globe.scene === "function" ? globe.scene() : null;
       if (scene) {
-        scene.fog = new THREE.FogExp2("#050010", 0.0011);
+        scene.fog = new THREE.FogExp2("#080700", 0.0011);
 
         if (!scene.userData.porterHoloLightsAdded) {
-          const cyanKey = new THREE.PointLight("#64D7FF", 2.8, 900);
-          cyanKey.position.set(0, 80, 240);
-          scene.add(cyanKey);
+          const crimsonKey = new THREE.PointLight("#D4A030", 3.2, 900);
+          crimsonKey.position.set(0, 80, 240);
+          scene.add(crimsonKey);
 
-          const magentaSide = new THREE.PointLight("#FF4FD8", 2.3, 900);
-          magentaSide.position.set(190, 70, 110);
-          scene.add(magentaSide);
+          const goldSide = new THREE.PointLight("#C4962A", 2.6, 900);
+          goldSide.position.set(190, 70, 110);
+          scene.add(goldSide);
 
-          const champagneFill = new THREE.PointLight("#FFE8A3", 1.25, 700);
+          const champagneFill = new THREE.PointLight("#FFE8A3", 1.1, 700);
           champagneFill.position.set(-160, 40, 120);
           scene.add(champagneFill);
 
           scene.userData.porterHoloLightsAdded = true;
+        }
+
+        if (!scene.userData.holoFloorAdded) {
+          // Floor grid — 600-unit plane at Y=-140 (below globe radius 100)
+          const grid = new THREE.GridHelper(600, 30, 0xe8b84b, 0xa07020);
+          grid.position.y = -140;
+          const applyGridOpacity = (m) => {
+            m.transparent = true;
+            m.opacity = 0.45;
+            m.depthWrite = false;
+          };
+          if (Array.isArray(grid.material)) {
+            grid.material.forEach(applyGridOpacity);
+          } else {
+            applyGridOpacity(grid.material);
+          }
+          scene.add(grid);
+
+          // Subtle glow disc on the floor directly under the globe
+          const disc = new THREE.Mesh(
+            new THREE.CircleGeometry(90, 48),
+            new THREE.MeshBasicMaterial({
+              color: 0xc4962a,
+              transparent: true,
+              opacity: 0.10,
+              depthWrite: false,
+              side: THREE.DoubleSide,
+            })
+          );
+          disc.rotation.x = -Math.PI / 2;
+          disc.position.y = -139;
+          scene.add(disc);
+
+          // Beam cone from globe centre (Y=0) to floor (Y=-140)
+          const beam = new THREE.Mesh(
+            new THREE.CylinderGeometry(2, 55, 140, 24, 1, true),
+            new THREE.MeshBasicMaterial({
+              color: 0xc8901a,
+              transparent: true,
+              opacity: 0.09,
+              side: THREE.DoubleSide,
+              depthWrite: false,
+            })
+          );
+          beam.position.y = -70;
+          scene.add(beam);
+
+          // Concentric floor rings replacing FloorEmitter
+          const ringDefs = [
+            { r: 28, color: 0xe8b84b, opacity: 0.70 },
+            { r: 52, color: 0xba0c2f, opacity: 0.38 },
+            { r: 78, color: 0xc4962a, opacity: 0.30 },
+            { r: 106, color: 0xe8b84b, opacity: 0.22 },
+            { r: 136, color: 0xba0c2f, opacity: 0.14 },
+          ];
+          ringDefs.forEach(({ r, color, opacity }) => {
+            const ring = new THREE.Mesh(
+              new THREE.RingGeometry(r - 0.7, r + 0.7, 80),
+              new THREE.MeshBasicMaterial({
+                color,
+                transparent: true,
+                opacity,
+                depthWrite: false,
+                side: THREE.DoubleSide,
+              })
+            );
+            ring.rotation.x = -Math.PI / 2;
+            ring.position.y = -139;
+            scene.add(ring);
+          });
+
+          scene.userData.holoFloorAdded = true;
         }
       }
     });
@@ -1440,8 +1796,8 @@ function DestinationChamber({
         country.name === selectedName
           ? COLORS.champagneLight
           : country.name === activeCountry?.name
-            ? "#FF4FD8"
-            : "rgba(125,235,255,0.96)",
+            ? COLORS.goldLight
+            : "rgba(255,200,175,0.80)",
     }));
   }, [activeCountry, countries, selectedName]);
 
@@ -1474,31 +1830,63 @@ function DestinationChamber({
     ];
   }, [activeCountry, countries]);
 
-  const arcs = useMemo(() => {
-    const denver = { lat: 39.7392, lng: -104.9903 };
+  const activeContinent = useMemo(() => {
+    if (!activeCountry || !worldGeoData.features.length) return null;
+    const match = worldGeoData.features.find((f) => {
+      const p = f.properties;
+      return p.NAME === activeCountry.name || p.ADMIN === activeCountry.name || p.NAME_EN === activeCountry.name;
+    });
+    return match?.properties?.CONTINENT ?? null;
+  }, [activeCountry, worldGeoData.features]);
 
-    return countries.slice(0, 7).map((country, index) => ({
-      startLat: activeCountry?.lat || denver.lat,
-      startLng: activeCountry?.lng || denver.lng,
-      endLat: country.lat,
-      endLng: country.lng,
-      altitude: 0.16 + index * 0.012,
-      color:
-        country.name === activeCountry?.name
-          ? "rgba(255,232,163,0.92)"
-          : index % 2 === 0
-            ? "rgba(125,235,255,0.44)"
-            : "rgba(255,79,216,0.40)",
-    }));
-  }, [activeCountry, countries]);
+  const polygonCapColor = useCallback(
+    (d) => activeContinent && d.properties.CONTINENT === activeContinent
+      ? "rgba(196,150,42,0.07)"
+      : "rgba(0,0,0,0)",
+    [activeContinent]
+  );
+  const polygonSideColor = useCallback(() => "rgba(0,0,0,0)", []);
+  const polygonStrokeColor = useCallback(
+    (d) => {
+      if (!activeContinent) return "rgba(243,213,138,0.40)";
+      return d.properties.CONTINENT === activeContinent
+        ? "rgba(255,220,90,0.95)"
+        : "rgba(243,213,138,0.14)";
+    },
+    [activeContinent]
+  );
 
-  function selectCountry(country) {
+  const handlePointClick = useCallback((country) => {
     setActiveCountry(country);
-    setPulseKey((value) => value + 1);
+    setPulseKey((v) => v + 1);
+  }, []);
+
+  function openDeepDive(country) {
+    setDeepDiveCountry(country);
+    if (globeRef.current && typeof globeRef.current.pointOfView === "function") {
+      const scene = typeof globeRef.current.scene === "function" ? globeRef.current.scene() : null;
+      const grp = scene?.children.find((c) => c.isGroup);
+      const rotOffsetDeg = grp ? (grp.rotation.y * 180) / Math.PI : 0;
+      globeRef.current.pointOfView({ lat: country.lat, lng: country.lng + rotOffsetDeg, altitude: 0.65 }, 900);
+    }
+  }
+
+  function closeDeepDive() {
+    const country = deepDiveCountry;
+    setDeepDiveCountry(null);
+    if (globeRef.current && country && typeof globeRef.current.pointOfView === "function") {
+      const scene = typeof globeRef.current.scene === "function" ? globeRef.current.scene() : null;
+      const grp = scene?.children.find((c) => c.isGroup);
+      const rotOffsetDeg = grp ? (grp.rotation.y * 180) / Math.PI : 0;
+      globeRef.current.pointOfView(
+        { lat: country.lat, lng: country.lng + rotOffsetDeg, altitude: isMobile ? 2.3 : 1.9 },
+        700
+      );
+    }
   }
 
   return (
-    <section className="relative h-screen w-screen overflow-hidden text-white bg-[#040009]">
+    <section className="relative h-screen w-screen overflow-hidden text-white bg-[#080700]">
       <ChamberCss />
       <RoomBackground active={Boolean(activeCountry)} />
 
@@ -1517,7 +1905,17 @@ function DestinationChamber({
         </button>
 
         <button
-          onClick={onReset}
+          onClick={() => {
+            onReset();
+            setActiveCountry(null);
+            firstPovRef.current = true;
+            if (globeRef.current && typeof globeRef.current.pointOfView === "function") {
+              const scene = typeof globeRef.current.scene === "function" ? globeRef.current.scene() : null;
+              const grp = scene?.children.find((c) => c.isGroup);
+              const rotOffsetDeg = grp ? (grp.rotation.y * 180 / Math.PI) : 0;
+              globeRef.current.pointOfView({ lat: 20, lng: rotOffsetDeg, altitude: 2.5 }, 600);
+            }
+          }}
           className="rounded-full px-4 py-2 text-[10px] sm:text-xs font-black border backdrop-blur-xl"
           style={{
             background: "rgba(8,4,14,0.48)",
@@ -1540,29 +1938,22 @@ function DestinationChamber({
         />
       </div>
 
-      <div className="absolute left-1/2 top-[47%] z-20 -translate-x-1/2 -translate-y-1/2 xl:left-[42%] xl:top-[47%]">
-        <div className="absolute left-1/2 top-[72%] z-[-1] -translate-x-1/2 pointer-events-none">
-          <FloorEmitter active={Boolean(activeCountry)} />
-        </div>
-
+      <div className="absolute inset-0 z-20">
         <HoloGlobeGlow active={Boolean(activeCountry)} />
 
-        <div
-          className="relative holo-globe-shell"
-          style={{
-            filter:
-              "drop-shadow(0 0 18px rgba(125,235,255,0.92)) drop-shadow(0 0 48px rgba(255,79,216,0.58)) drop-shadow(0 0 120px rgba(125,235,255,0.38))",
-          }}
-        >
+        <div className="relative holo-globe-shell">
           <Globe
             ref={globeRef}
             width={globeSize.width}
             height={globeSize.height}
             backgroundColor="rgba(0,0,0,0)"
-            globeImageUrl="//unpkg.com/three-globe/example/img/earth-blue-marble.jpg"
-            bumpImageUrl="//unpkg.com/three-globe/example/img/earth-topology.png"
             showAtmosphere
             showGraticules
+            polygonsData={worldGeoData.features}
+            polygonCapColor={polygonCapColor}
+            polygonSideColor={polygonSideColor}
+            polygonStrokeColor={polygonStrokeColor}
+            polygonAltitude={0.005}
             pointsData={points}
             pointLat={(d) => d.lat}
             pointLng={(d) => d.lng}
@@ -1570,25 +1961,14 @@ function DestinationChamber({
             pointRadius={0.18}
             pointColor={(d) => d.color}
             pointLabel={(d) => `${countryIcon(d)} ${d.name}<br/>${d.note}`}
-            onPointClick={(country) => selectCountry(country)}
+            onPointClick={handlePointClick}
             ringsData={rings}
             ringLat={(d) => d.lat}
             ringLng={(d) => d.lng}
-            ringColor={(d) => (d.name === selectedName ? COLORS.champagneLight : "#FF4FD8")}
+            ringColor={(d) => (d.name === selectedName ? COLORS.champagneLight : COLORS.gold)}
             ringMaxRadius={(d) => d.maxR}
             ringPropagationSpeed={(d) => d.propagationSpeed}
             ringRepeatPeriod={(d) => d.repeatPeriod}
-            arcsData={arcs}
-            arcStartLat={(d) => d.startLat}
-            arcStartLng={(d) => d.startLng}
-            arcEndLat={(d) => d.endLat}
-            arcEndLng={(d) => d.endLng}
-            arcColor={(d) => [d.color, "rgba(125,235,255,0.05)"]}
-            arcAltitude={(d) => d.altitude}
-            arcStroke={0.42}
-            arcDashLength={0.42}
-            arcDashGap={1.12}
-            arcDashAnimateTime={3600}
             labelsData={activeCountry && !isMobile ? [activeCountry] : []}
             labelLat={(d) => d.lat}
             labelLng={(d) => d.lng}
@@ -1597,17 +1977,17 @@ function DestinationChamber({
             labelDotRadius={0.28}
             labelColor={() => COLORS.champagneLight}
             labelResolution={2}
-            atmosphereColor="#FF4FD8"
-            atmosphereAltitude={0.3}
+            atmosphereColor="#C4962A"
+            atmosphereAltitude={0.40}
           />
         </div>
 
         <ChamberReticle activeCountry={activeCountry} pulseKey={pulseKey} />
       </div>
 
-      {activeCountry && !isMobile && <ConnectorBeam />}
+      {activeCountry && !isMobile && !deepDiveCountry && <ConnectorBeam />}
 
-      {activeCountry && (
+      {activeCountry && !deepDiveCountry && (
         <div className="absolute right-5 top-[52%] z-40 hidden w-[min(35vw,500px)] -translate-y-1/2 xl:block">
           <FloatingIntelPanel
             mission={activeMission}
@@ -1618,11 +1998,12 @@ function DestinationChamber({
             companionWinner={companionWinner}
             onVote={() => activeCountry && onVote(activeCountry)}
             onAdvance={onAdvance}
+            onDeepDive={openDeepDive}
           />
         </div>
       )}
 
-      {activeCountry && (
+      {activeCountry && !deepDiveCountry && (
         <div className="absolute inset-x-3 bottom-[116px] z-40 xl:hidden">
           <FloatingIntelPanel
             mission={activeMission}
@@ -1633,30 +2014,51 @@ function DestinationChamber({
             companionWinner={companionWinner}
             onVote={() => activeCountry && onVote(activeCountry)}
             onAdvance={onAdvance}
+            onDeepDive={openDeepDive}
             mobile
           />
         </div>
       )}
 
-      {!activeCountry && (
+      {!activeCountry && !deepDiveCountry && (
         <div className="absolute right-5 top-[52%] z-40 hidden w-[min(32vw,440px)] -translate-y-1/2 xl:block">
           <EmptyCountryPrompt activeMission={activeMission} />
         </div>
       )}
 
-      <div className="absolute bottom-2 left-1/2 z-50 w-[min(94vw,900px)] -translate-x-1/2 sm:bottom-3">
-        <DestinationConsole
-          countries={countries}
-          activeCountry={activeCountry}
-          selectedName={selectedName}
-          finalistNames={activeMission.finalistNames}
-          onSelectCountry={selectCountry}
-          onPorterPick={onPorterPick}
-          onAdvance={onAdvance}
-          canAdvance={activeMission.canAdvance}
-          routeComplete={routeComplete}
+      {!deepDiveCountry && (
+        <div className="absolute bottom-2 left-1/2 z-50 w-[min(94vw,900px)] -translate-x-1/2 sm:bottom-3">
+          <DestinationConsole
+            countries={countries}
+            activeCountry={activeCountry}
+            selectedName={selectedName}
+            finalistNames={activeMission.finalistNames}
+            onSelectCountry={handlePointClick}
+            onPorterPick={onPorterPick}
+            onAdvance={onAdvance}
+            canAdvance={activeMission.canAdvance}
+            routeComplete={routeComplete}
+          />
+        </div>
+      )}
+
+      {deepDiveCountry && (
+        <DeepDivePanel
+          country={deepDiveCountry}
+          mission={activeMission}
+          selected={deepDiveCountry.name === activeMission.selectedName}
+          onClose={closeDeepDive}
+          onVote={() => { onVote(deepDiveCountry); closeDeepDive(); }}
         />
-      </div>
+      )}
+
+      {showCelebration && anchorWinner && companionWinner && (
+        <DestinationLockedOverlay
+          anchorWinner={anchorWinner}
+          companionWinner={companionWinner}
+          onDismiss={onDismissCelebration}
+        />
+      )}
     </section>
   );
 }
@@ -1732,16 +2134,17 @@ function ChamberCss() {
         border-radius: 9999px;
         pointer-events: none;
         z-index: 5;
+        will-change: transform, opacity;
         background:
           repeating-linear-gradient(
             0deg,
-            rgba(125,235,255,0.16) 0px,
-            rgba(125,235,255,0.16) 1px,
+            rgba(196,150,42,0.14) 0px,
+            rgba(196,150,42,0.14) 1px,
             transparent 2px,
             transparent 7px
           ),
           radial-gradient(circle at 38% 32%, rgba(255,255,255,0.22), transparent 16%),
-          radial-gradient(circle, transparent 45%, rgba(125,235,255,0.18) 57%, rgba(255,79,216,0.20) 70%, transparent 74%);
+          radial-gradient(circle, transparent 45%, rgba(196,150,42,0.16) 57%, rgba(196,150,42,0.18) 70%, transparent 74%);
         mix-blend-mode: screen;
         animation: holoShell 3.6s ease-in-out infinite;
       }
@@ -1757,12 +2160,12 @@ function ChamberCss() {
         border-radius: 9999px;
         pointer-events: none;
         z-index: 6;
-        border: 1px solid rgba(125,235,255,0.24);
+        border: 1px solid rgba(196,150,42,0.22);
         box-shadow:
-          inset 0 0 38px rgba(125,235,255,0.12),
-          inset 0 0 70px rgba(255,79,216,0.10),
-          0 0 42px rgba(125,235,255,0.16),
-          0 0 82px rgba(255,79,216,0.12);
+          inset 0 0 38px rgba(196,150,42,0.10),
+          inset 0 0 70px rgba(196,150,42,0.08),
+          0 0 42px rgba(196,150,42,0.14),
+          0 0 82px rgba(196,150,42,0.10);
       }
 
       .panel-materialize {
@@ -1779,8 +2182,32 @@ function ChamberCss() {
       }
 
       .chamber-scrollbar::-webkit-scrollbar-thumb {
-        background: rgba(255,79,216,.42);
+        background: rgba(196,150,42,.48);
         border-radius: 999px;
+      }
+
+      @keyframes confettiFall {
+        0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }
+        80% { opacity: 0.7; }
+        100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+      }
+
+      @keyframes deepDiveEnter {
+        0% { opacity: 0; transform: translateY(32px); }
+        100% { opacity: 1; transform: translateY(0); }
+      }
+
+      @keyframes celebrationEnter {
+        0% { opacity: 0; transform: scale(0.94); }
+        100% { opacity: 1; transform: scale(1); }
+      }
+
+      .deep-dive-enter {
+        animation: deepDiveEnter 420ms cubic-bezier(.2,.9,.2,1) both;
+      }
+
+      .celebration-enter {
+        animation: celebrationEnter 500ms cubic-bezier(.2,.9,.2,1) both;
       }
     `}</style>
   );
@@ -1788,15 +2215,15 @@ function ChamberCss() {
 
 function RoomBackground({ active }) {
   return (
-    <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden bg-[#040009]">
+    <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden bg-[#080700]">
       <div
         className="absolute inset-0"
         style={{
           background:
-            "radial-gradient(circle at 50% 17%, rgba(125,235,255,0.14), transparent 22%), " +
-            "radial-gradient(circle at 24% 17%, rgba(255,79,216,0.13), transparent 22%), " +
-            "radial-gradient(circle at 82% 25%, rgba(243,213,138,0.08), transparent 24%), " +
-            "linear-gradient(180deg, #090014 0%, #05000B 42%, #000000 100%)",
+            "radial-gradient(circle at 50% 17%, rgba(196,150,42,0.22), transparent 22%), " +
+            "radial-gradient(circle at 24% 17%, rgba(243,213,138,0.16), transparent 22%), " +
+            "radial-gradient(circle at 82% 25%, rgba(196,150,42,0.09), transparent 24%), " +
+            "linear-gradient(180deg, #100e01 0%, #080700 42%, #040400 100%)",
         }}
       />
 
@@ -1804,12 +2231,12 @@ function RoomBackground({ active }) {
         className="absolute left-1/2 top-[6vh] h-[60vh] w-[88vw] max-w-[1380px] -translate-x-1/2 rounded-t-[4rem] border"
         style={{
           background:
-            "linear-gradient(180deg, rgba(12,4,24,0.58), rgba(6,2,14,0.28) 58%, rgba(0,0,0,0.08)), " +
-            "repeating-linear-gradient(90deg, rgba(125,235,255,0.026) 0px, rgba(125,235,255,0.026) 1px, transparent 1px, transparent 124px), " +
-            "repeating-linear-gradient(0deg, rgba(255,79,216,0.024) 0px, rgba(255,79,216,0.024) 1px, transparent 1px, transparent 92px)",
-          borderColor: "rgba(125,235,255,0.08)",
+            "linear-gradient(180deg, rgba(20,18,2,0.52), rgba(12,10,1,0.26) 58%, rgba(0,0,0,0.08)), " +
+            "repeating-linear-gradient(90deg, rgba(196,150,42,0.09) 0px, rgba(196,150,42,0.09) 1px, transparent 1px, transparent 124px), " +
+            "repeating-linear-gradient(0deg, rgba(196,150,42,0.07) 0px, rgba(196,150,42,0.07) 1px, transparent 1px, transparent 92px)",
+          borderColor: "rgba(196,150,42,0.26)",
           boxShadow:
-            "inset 0 0 120px rgba(125,235,255,0.035), inset 0 -80px 110px rgba(0,0,0,0.56), 0 0 130px rgba(0,0,0,0.86)",
+            "inset 0 0 120px rgba(196,150,42,0.06), inset 0 -80px 110px rgba(0,0,0,0.56), 0 0 130px rgba(0,0,0,0.86)",
         }}
       />
 
@@ -1817,24 +2244,24 @@ function RoomBackground({ active }) {
         className="absolute left-1/2 top-[7.5vh] h-[2px] w-[66vw] max-w-[960px] -translate-x-1/2 rounded-full"
         style={{
           background:
-            "linear-gradient(90deg, transparent, rgba(125,235,255,0.30), rgba(255,79,216,0.42), rgba(243,213,138,0.38), rgba(125,235,255,0.30), transparent)",
+            "linear-gradient(90deg, transparent, rgba(196,150,42,0.52), rgba(196,150,42,0.78), rgba(243,213,138,0.62), rgba(196,150,42,0.52), transparent)",
           boxShadow:
-            "0 0 18px rgba(255,79,216,0.22), 0 0 55px rgba(125,235,255,0.24)",
+            "0 0 18px rgba(196,150,42,0.42), 0 0 55px rgba(196,150,42,0.28)",
         }}
       />
 
-      <div className="absolute left-1/2 top-[9vh] h-[26vh] w-[74vw] -translate-x-1/2 rounded-full bg-[#64D7FF]/10 blur-[100px]" />
-      <div className="absolute left-[25%] top-[22vh] h-[24vh] w-[38vw] rounded-full bg-[#FF4FD8]/12 blur-[110px]" />
-      <div className="absolute right-[15%] top-[24vh] h-[18vh] w-[34vw] rounded-full bg-[#F3D58A]/7 blur-[110px]" />
+      <div className="absolute left-1/2 top-[9vh] h-[26vh] w-[74vw] -translate-x-1/2 rounded-full bg-[#C4962A]/22 blur-[100px]" />
+      <div className="absolute left-[25%] top-[22vh] h-[24vh] w-[38vw] rounded-full bg-[#F3D58A]/18 blur-[110px]" />
+      <div className="absolute right-[15%] top-[24vh] h-[18vh] w-[34vw] rounded-full bg-[#C4962A]/12 blur-[110px]" />
 
       <div
         className="absolute left-[-7vw] top-[6vh] h-[76vh] w-[36vw] origin-right -skew-y-6 border-r"
         style={{
           background:
-            "linear-gradient(90deg, #000 0%, rgba(0,0,0,0.9) 36%, rgba(15,5,30,0.42) 72%, transparent 100%), " +
-            "repeating-linear-gradient(0deg, transparent 0px, transparent 76px, rgba(125,235,255,0.045) 77px, transparent 78px)",
-          borderColor: "rgba(125,235,255,0.08)",
-          boxShadow: "inset -50px 0 90px rgba(255,79,216,0.02)",
+            "linear-gradient(90deg, #000 0%, rgba(0,0,0,0.9) 36%, rgba(18,15,2,0.42) 72%, transparent 100%), " +
+            "repeating-linear-gradient(0deg, transparent 0px, transparent 76px, rgba(255,232,163,0.08) 77px, transparent 78px)",
+          borderColor: "rgba(196,150,42,0.22)",
+          boxShadow: "inset -50px 0 90px rgba(196,150,42,0.04)",
         }}
       />
 
@@ -1842,130 +2269,33 @@ function RoomBackground({ active }) {
         className="absolute right-[-7vw] top-[6vh] h-[76vh] w-[36vw] origin-left skew-y-6 border-l"
         style={{
           background:
-            "linear-gradient(270deg, #000 0%, rgba(0,0,0,0.9) 36%, rgba(15,5,30,0.42) 72%, transparent 100%), " +
-            "repeating-linear-gradient(0deg, transparent 0px, transparent 76px, rgba(255,79,216,0.045) 77px, transparent 78px)",
-          borderColor: "rgba(255,79,216,0.08)",
-          boxShadow: "inset 50px 0 90px rgba(125,235,255,0.02)",
+            "linear-gradient(270deg, #000 0%, rgba(0,0,0,0.9) 36%, rgba(18,15,2,0.42) 72%, transparent 100%), " +
+            "repeating-linear-gradient(0deg, transparent 0px, transparent 76px, rgba(255,232,163,0.08) 77px, transparent 78px)",
+          borderColor: "rgba(196,150,42,0.20)",
+          boxShadow: "inset 50px 0 90px rgba(196,150,42,0.04)",
         }}
       />
 
       <div
         className="absolute left-[8vw] top-[18vh] h-[44vh] w-px"
         style={{
-          background: "linear-gradient(180deg, transparent, rgba(125,235,255,0.34), transparent)",
-          boxShadow: "0 0 22px rgba(125,235,255,0.28)",
+          background: "linear-gradient(180deg, transparent, rgba(255,210,160,0.55), transparent)",
+          boxShadow: "0 0 18px rgba(196,150,42,0.48), 0 0 40px rgba(196,150,42,0.20)",
         }}
       />
 
       <div
         className="absolute right-[8vw] top-[18vh] h-[44vh] w-px"
         style={{
-          background: "linear-gradient(180deg, transparent, rgba(255,79,216,0.34), transparent)",
-          boxShadow: "0 0 22px rgba(255,79,216,0.28)",
-        }}
-      />
-
-      <NeonFloorGrid active={active} />
-
-      <div
-        className="absolute left-1/2 bottom-[5.2vh] h-[18vh] w-[48vw] min-w-[360px] max-w-[780px] -translate-x-1/2 rounded-[100%] border"
-        style={{
-          transform: "translateX(-50%) rotateX(68deg)",
-          background:
-            "radial-gradient(ellipse at center, rgba(3,2,8,0.96), rgba(0,0,0,0.94) 64%, transparent 72%)",
-          borderColor: "rgba(255,232,163,0.16)",
-          boxShadow:
-            "0 0 70px rgba(125,235,255,0.14), 0 0 90px rgba(255,79,216,0.10), inset 0 0 54px rgba(255,232,163,0.07)",
-        }}
-      />
-
-      <div
-        className="absolute left-1/2 bottom-[12vh] h-[49vh] w-[20vw] min-w-[170px] -translate-x-1/2"
-        style={{
-          background:
-            "linear-gradient(180deg, rgba(125,235,255,0.00), rgba(125,235,255,0.22) 27%, rgba(255,79,216,0.22) 52%, rgba(243,213,138,0.10) 70%, rgba(100,215,255,0.00))",
-          clipPath: "polygon(45% 0%, 55% 0%, 100% 100%, 0% 100%)",
-          filter: "blur(18px)",
-          opacity: active ? 0.96 : 0.78,
+          background: "linear-gradient(180deg, transparent, rgba(255,210,160,0.55), transparent)",
+          boxShadow: "0 0 18px rgba(196,150,42,0.52), 0 0 40px rgba(196,150,42,0.18)",
         }}
       />
 
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_52%,transparent_0%,transparent_41%,rgba(0,0,0,0.72)_100%)]" />
 
-      <div className="absolute inset-0 opacity-[0.045] mix-blend-screen">
-        <div
-          className="h-[220%] w-full"
-          style={{
-            background:
-              "repeating-linear-gradient(180deg, transparent 0px, transparent 6px, rgba(125,235,255,0.85) 7px, transparent 8px)",
-            animation: "chamberScan 9s linear infinite",
-          }}
-        />
-      </div>
-
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,transparent_50%,rgba(0,0,0,0.88)_100%)]" />
     </div>
-  );
-}
-
-function NeonFloorGrid({ active }) {
-  return (
-    <>
-      <div
-        className="absolute left-1/2 bottom-[-36vh] h-[76vh] w-[156vw] -translate-x-1/2"
-        style={{
-          transform: "translateX(-50%) perspective(940px) rotateX(64deg)",
-          transformOrigin: "center bottom",
-          background:
-            "radial-gradient(ellipse at center, rgba(125,235,255,0.20), rgba(255,79,216,0.11) 26%, rgba(0,0,0,0.80) 69%), " +
-            "linear-gradient(90deg, transparent 0%, rgba(255,79,216,0.18) 49.8%, rgba(125,235,255,0.52) 50%, rgba(255,79,216,0.18) 50.2%, transparent 100%)",
-          boxShadow:
-            "inset 0 0 120px rgba(125,235,255,0.08), 0 -35px 130px rgba(255,79,216,0.05)",
-        }}
-      />
-
-      <div
-        className="absolute left-1/2 bottom-[-29vh] h-[76vh] w-[156vw] -translate-x-1/2"
-        style={{
-          transform: "translateX(-50%) perspective(940px) rotateX(64deg)",
-          transformOrigin: "center bottom",
-          background:
-            "linear-gradient(rgba(255,79,216,0.34) 1px, transparent 1px), " +
-            "linear-gradient(90deg, rgba(125,235,255,0.25) 1px, transparent 1px)",
-          backgroundSize: "78px 78px",
-          maskImage:
-            "linear-gradient(180deg, transparent 0%, black 15%, black 75%, transparent 100%), radial-gradient(ellipse at center, black 0%, black 58%, transparent 77%)",
-          WebkitMaskImage:
-            "linear-gradient(180deg, transparent 0%, black 15%, black 75%, transparent 100%), radial-gradient(ellipse at center, black 0%, black 58%, transparent 77%)",
-          animation: "gridPulse 4.2s ease-in-out infinite",
-          opacity: active ? 0.92 : 0.78,
-        }}
-      />
-
-      <div
-        className="absolute left-1/2 bottom-[-31vh] h-[76vh] w-[156vw] -translate-x-1/2"
-        style={{
-          transform: "translateX(-50%) perspective(940px) rotateX(64deg)",
-          transformOrigin: "center bottom",
-          background:
-            "repeating-linear-gradient(90deg, transparent 0px, transparent 154px, rgba(243,213,138,0.28) 155px, transparent 157px), " +
-            "repeating-linear-gradient(0deg, transparent 0px, transparent 154px, rgba(255,79,216,0.24) 155px, transparent 157px)",
-          maskImage: "radial-gradient(ellipse at center, black 0%, black 56%, transparent 76%)",
-          WebkitMaskImage: "radial-gradient(ellipse at center, black 0%, black 56%, transparent 76%)",
-          opacity: 0.42,
-        }}
-      />
-
-      <div
-        className="absolute left-1/2 bottom-[12vh] h-[2px] w-[82vw] -translate-x-1/2 rounded-full"
-        style={{
-          background:
-            "linear-gradient(90deg, transparent, rgba(255,79,216,0.72), rgba(125,235,255,0.96), rgba(255,79,216,0.72), transparent)",
-          boxShadow:
-            "0 0 22px rgba(255,79,216,0.56), 0 0 58px rgba(125,235,255,0.34)",
-        }}
-      />
-    </>
   );
 }
 
@@ -1976,21 +2306,10 @@ function HoloGlobeGlow({ active }) {
         className="absolute left-1/2 top-1/2 h-[min(86vw,820px)] w-[min(86vw,820px)] -translate-x-1/2 -translate-y-1/2 rounded-full pointer-events-none"
         style={{
           background:
-            "radial-gradient(circle, rgba(125,235,255,0.30), rgba(125,235,255,0.11) 27%, rgba(255,79,216,0.16) 46%, transparent 72%)",
+            "radial-gradient(circle, rgba(196,150,42,0.30), rgba(196,150,42,0.12) 27%, rgba(196,150,42,0.14) 46%, transparent 72%)",
           filter: "blur(18px)",
           opacity: active ? 1 : 0.86,
-        }}
-      />
-
-      <div
-        className="absolute left-1/2 top-1/2 h-[min(76vw,700px)] w-[min(76vw,700px)] -translate-x-1/2 -translate-y-1/2 rounded-full pointer-events-none"
-        style={{
-          background:
-            "radial-gradient(circle at 35% 30%, rgba(255,255,255,0.16), transparent 18%), " +
-            "radial-gradient(circle at 55% 48%, rgba(125,235,255,0.13), transparent 48%), " +
-            "radial-gradient(circle at 73% 38%, rgba(255,79,216,0.18), transparent 42%)",
-          filter: "blur(4px)",
-          mixBlendMode: "screen",
+          willChange: "opacity",
         }}
       />
 
@@ -1999,9 +2318,10 @@ function HoloGlobeGlow({ active }) {
         style={{
           transform: "translateX(-50%) scaleY(-0.42)",
           background:
-            "radial-gradient(ellipse at center, rgba(125,235,255,0.25), rgba(255,79,216,0.18) 32%, rgba(243,213,138,0.08) 54%, transparent 73%)",
+            "radial-gradient(ellipse at center, rgba(196,150,42,0.26), rgba(243,213,138,0.16) 32%, rgba(196,150,42,0.08) 54%, transparent 73%)",
           filter: "blur(12px)",
           animation: "reflectionBreathe 4s ease-in-out infinite",
+          willChange: "transform, opacity",
         }}
       />
 
@@ -2009,10 +2329,11 @@ function HoloGlobeGlow({ active }) {
         className="absolute left-1/2 top-[53%] h-[470px] w-[330px] -translate-x-1/2 pointer-events-none"
         style={{
           background:
-            "linear-gradient(180deg, rgba(125,235,255,0.00), rgba(125,235,255,0.24), rgba(255,79,216,0.22), rgba(243,213,138,0.10), transparent)",
+            "linear-gradient(180deg, rgba(196,150,42,0.00), rgba(243,213,138,0.22), rgba(196,150,42,0.20), rgba(196,150,42,0.08), transparent)",
           clipPath: "polygon(44% 0%, 56% 0%, 100% 100%, 0% 100%)",
           filter: "blur(12px)",
           opacity: 0.92,
+          willChange: "transform",
         }}
       />
     </>
@@ -2032,16 +2353,16 @@ function MissionHud({
       className="rounded-[1.35rem] border px-3 py-2 backdrop-blur-2xl"
       style={{
         background:
-          "linear-gradient(135deg, rgba(8,4,14,0.56), rgba(8,3,10,0.34)), radial-gradient(circle at 16% 12%, rgba(255,79,216,0.10), transparent 34%)",
-        borderColor: "rgba(255,79,216,0.18)",
-        boxShadow: "0 0 35px rgba(255,79,216,0.06)",
+          "linear-gradient(135deg, rgba(14,3,4,0.62), rgba(10,2,3,0.40)), radial-gradient(circle at 16% 12%, rgba(196,150,42,0.12), transparent 34%)",
+        borderColor: "rgba(196,150,42,0.22)",
+        boxShadow: "0 0 35px rgba(196,150,42,0.08)",
       }}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#7DEBFF] shadow-[0_0_12px_rgba(125,235,255,0.9)]" />
-            <p className="text-[9px] uppercase tracking-[0.28em] font-black" style={{ color: "#bdf8ff" }}>
+            <span className="h-1.5 w-1.5 rounded-full bg-[#E8B84B] shadow-[0_0_12px_rgba(232,184,75,0.9)]" />
+            <p className="text-[9px] uppercase tracking-[0.28em] font-black" style={{ color: "#FFD880" }}>
               {activeMission.eyebrow}
             </p>
           </div>
@@ -2073,12 +2394,12 @@ function MissionHud({
                   ? `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne})`
                   : locked
                     ? "rgba(255,255,255,0.025)"
-                    : "rgba(125,235,255,0.08)",
-                color: active ? COLORS.midnight : locked ? "rgba(255,255,255,0.24)" : "#bdf8ff",
-                borderColor: active ? "transparent" : locked ? "rgba(255,255,255,0.07)" : "rgba(125,235,255,0.18)",
+                    : "rgba(196,150,42,0.10)",
+                color: active ? COLORS.midnight : locked ? "rgba(255,255,255,0.24)" : "#FFD880",
+                borderColor: active ? "transparent" : locked ? "rgba(255,255,255,0.07)" : "rgba(196,150,42,0.22)",
               }}
             >
-              {mission.eyebrow.replace("Mission ", "M")}
+              {mission.eyebrow.replace("Vote ", "V")}
             </button>
           );
         })}
@@ -2110,13 +2431,13 @@ function EmptyCountryPrompt({ activeMission }) {
       className="rounded-[2rem] border p-5 backdrop-blur-2xl"
       style={{
         background:
-          "linear-gradient(135deg, rgba(8,4,14,0.56), rgba(5,5,10,0.46)), radial-gradient(circle at 10% 0%, rgba(255,79,216,0.12), transparent 34%)",
-        borderColor: "rgba(255,79,216,0.20)",
+          "linear-gradient(135deg, rgba(14,3,4,0.62), rgba(10,2,3,0.48)), radial-gradient(circle at 10% 0%, rgba(196,150,42,0.14), transparent 34%)",
+        borderColor: "rgba(196,150,42,0.22)",
         boxShadow:
-          "0 0 45px rgba(255,79,216,0.08), inset 0 0 42px rgba(125,235,255,0.025)",
+          "0 0 45px rgba(196,150,42,0.08), inset 0 0 42px rgba(196,150,42,0.025)",
       }}
     >
-      <p className="text-xs uppercase tracking-[0.28em] font-black" style={{ color: "#bdf8ff" }}>
+      <p className="text-xs uppercase tracking-[0.28em] font-black" style={{ color: "#FFD880" }}>
         Awaiting target
       </p>
       <h2 className="mt-2 text-4xl font-black" style={{ fontFamily: "Georgia, serif" }}>
@@ -2138,8 +2459,8 @@ function ConnectorBeam() {
       <div
         className="h-px w-full"
         style={{
-          background: "linear-gradient(90deg, rgba(243,213,138,0), rgba(125,235,255,0.92), rgba(255,79,216,0.64), rgba(100,215,255,0))",
-          boxShadow: "0 0 18px rgba(125,235,255,0.48), 0 0 34px rgba(255,79,216,0.32)",
+          background: "linear-gradient(90deg, rgba(243,213,138,0), rgba(196,150,42,0.82), rgba(196,150,42,0.64), rgba(196,150,42,0))",
+          boxShadow: "0 0 18px rgba(196,150,42,0.44), 0 0 34px rgba(196,150,42,0.30)",
           animation: "beamBreathe 2.4s ease-in-out infinite",
         }}
       />
@@ -2163,6 +2484,7 @@ function FloatingIntelPanel({
   companionWinner,
   onVote,
   onAdvance,
+  onDeepDive,
   mobile = false,
 }) {
   if (!country) return null;
@@ -2175,17 +2497,17 @@ function FloatingIntelPanel({
       ].join(" ")}
       style={{
         background:
-          "linear-gradient(135deg, rgba(8,4,14,0.76), rgba(5,5,10,0.64)), radial-gradient(circle at 10% 0%, rgba(255,79,216,0.16), transparent 34%)",
-        borderColor: "rgba(125,235,255,0.28)",
+          "linear-gradient(135deg, rgba(14,3,4,0.80), rgba(10,2,3,0.68)), radial-gradient(circle at 10% 0%, rgba(196,150,42,0.18), transparent 34%)",
+        borderColor: "rgba(196,150,42,0.26)",
         boxShadow:
-          "0 0 48px rgba(125,235,255,0.12), 0 30px 120px rgba(0,0,0,0.64), inset 0 0 42px rgba(255,79,216,0.04)",
+          "0 0 48px rgba(196,150,42,0.10), 0 30px 120px rgba(0,0,0,0.64), inset 0 0 42px rgba(196,150,42,0.04)",
       }}
     >
       <div
         className="absolute inset-0 opacity-18 pointer-events-none"
         style={{
           backgroundImage:
-            "linear-gradient(rgba(125,235,255,0.11) 1px, transparent 1px), linear-gradient(90deg, rgba(255,79,216,0.09) 1px, transparent 1px)",
+            "linear-gradient(rgba(196,150,42,0.10) 1px, transparent 1px), linear-gradient(90deg, rgba(196,150,42,0.08) 1px, transparent 1px)",
           backgroundSize: "26px 26px",
         }}
       />
@@ -2197,15 +2519,15 @@ function FloatingIntelPanel({
           <div
             className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border text-3xl sm:h-16 sm:w-16"
             style={{
-              background: selected ? "rgba(243,213,138,0.12)" : "rgba(125,235,255,0.08)",
-              borderColor: selected ? "rgba(243,213,138,0.28)" : "rgba(125,235,255,0.22)",
+              background: selected ? "rgba(243,213,138,0.12)" : "rgba(196,150,42,0.08)",
+              borderColor: selected ? "rgba(243,213,138,0.28)" : "rgba(196,150,42,0.22)",
             }}
           >
             {countryIcon(country)}
           </div>
 
           <div className="min-w-0 flex-1">
-            <p className="text-[10px] uppercase tracking-[0.26em] font-black" style={{ color: "#bdf8ff" }}>
+            <p className="text-[10px] uppercase tracking-[0.26em] font-black" style={{ color: "#FFD880" }}>
               Target acquired · {mission.eyebrow}
             </p>
             <h2 className="mt-1 truncate text-3xl font-black leading-none sm:text-4xl" style={{ fontFamily: "Georgia, serif" }}>
@@ -2228,7 +2550,7 @@ function FloatingIntelPanel({
             className="absolute inset-0"
             style={{
               background:
-                "linear-gradient(180deg, rgba(5,5,10,0.04), rgba(5,5,10,0.76)), radial-gradient(circle at 18% 12%, rgba(125,235,255,0.22), transparent 32%)",
+                "linear-gradient(180deg, rgba(10,2,3,0.04), rgba(10,2,3,0.76)), radial-gradient(circle at 18% 12%, rgba(196,150,42,0.20), transparent 32%)",
             }}
           />
           <div className="absolute left-4 bottom-4 rounded-full border border-white/10 bg-black/42 px-3 py-1 text-xs font-black text-white/70 backdrop-blur">
@@ -2254,9 +2576,9 @@ function FloatingIntelPanel({
                 key={reason}
                 className="rounded-full border px-3 py-1 text-xs font-bold"
                 style={{
-                  background: "rgba(125,235,255,0.08)",
-                  borderColor: "rgba(125,235,255,0.16)",
-                  color: "#bdf8ff",
+                  background: "rgba(196,150,42,0.08)",
+                  borderColor: "rgba(196,150,42,0.18)",
+                  color: "#FFD880",
                 }}
               >
                 {reason}
@@ -2296,14 +2618,28 @@ function FloatingIntelPanel({
             disabled={!mission.canAdvance || mission.mode === "companion-final"}
             className="rounded-2xl px-4 py-3 text-left font-black uppercase tracking-[0.08em] disabled:opacity-35"
             style={{
-              background: "rgba(125,235,255,0.08)",
-              border: "1px solid rgba(125,235,255,0.20)",
-              color: "#bdf8ff",
+              background: "rgba(196,150,42,0.08)",
+              border: "1px solid rgba(196,150,42,0.22)",
+              color: "#FFD880",
             }}
           >
-            {mission.mode === "companion-final" ? "Final protocol" : `${mission.nextLabel} →`}
+            {mission.mode === "companion-final" ? "Lock destination" : `${mission.nextLabel} →`}
           </button>
         </div>
+
+        {!mobile && (
+          <button
+            onClick={() => onDeepDive?.(country)}
+            className="mt-2 w-full rounded-2xl px-4 py-2.5 text-center font-black uppercase tracking-[0.1em] text-xs border transition-all hover:border-[rgba(243,213,138,0.4)]"
+            style={{
+              background: "rgba(196,150,42,0.05)",
+              border: "1px solid rgba(196,150,42,0.18)",
+              color: "rgba(243,213,138,0.72)",
+            }}
+          >
+            Deep dive → full intel
+          </button>
+        )}
       </div>
     </div>
   );
@@ -2312,11 +2648,343 @@ function FloatingIntelPanel({
 function CornerBrackets() {
   return (
     <>
-      <div className="pointer-events-none absolute left-3 top-3 h-8 w-8 border-l border-t border-[#7DEBFF]/40" />
-      <div className="pointer-events-none absolute right-3 top-3 h-8 w-8 border-r border-t border-[#FF4FD8]/40" />
-      <div className="pointer-events-none absolute bottom-3 left-3 h-8 w-8 border-b border-l border-[#FF4FD8]/40" />
-      <div className="pointer-events-none absolute bottom-3 right-3 h-8 w-8 border-b border-r border-[#7DEBFF]/40" />
+      <div className="pointer-events-none absolute left-3 top-3 h-8 w-8 border-l border-t border-[#E8B84B]/40" />
+      <div className="pointer-events-none absolute right-3 top-3 h-8 w-8 border-r border-t border-[#C4962A]/50" />
+      <div className="pointer-events-none absolute bottom-3 left-3 h-8 w-8 border-b border-l border-[#C4962A]/50" />
+      <div className="pointer-events-none absolute bottom-3 right-3 h-8 w-8 border-b border-r border-[#E8B84B]/40" />
     </>
+  );
+}
+
+function DeepDivePanel({ country, mission, selected, onClose, onVote }) {
+  const data = DEEP_DIVE[country.name] || {};
+
+  return (
+    <div className="absolute inset-0 z-50 flex flex-col overflow-hidden deep-dive-enter">
+      <div
+        className="absolute inset-0"
+        style={{
+          background:
+            "linear-gradient(180deg, rgba(4,3,0,0.96) 0%, rgba(8,7,0,0.94) 100%)",
+          backdropFilter: "blur(24px)",
+        }}
+      />
+
+      <div className="relative z-10 flex flex-col h-full overflow-y-auto chamber-scrollbar">
+        <div
+          className="sticky top-0 z-20 flex items-center gap-3 px-5 py-3 border-b"
+          style={{
+            background: "rgba(4,3,0,0.88)",
+            borderColor: "rgba(196,150,42,0.18)",
+            backdropFilter: "blur(12px)",
+          }}
+        >
+          <button
+            onClick={onClose}
+            className="flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-black border"
+            style={{
+              background: "rgba(196,150,42,0.08)",
+              borderColor: "rgba(196,150,42,0.22)",
+              color: "#FFD880",
+            }}
+          >
+            ← Back
+          </button>
+
+          <div className="flex-1 min-w-0">
+            <div className="text-[9px] uppercase tracking-[0.3em] font-black" style={{ color: "rgba(243,213,138,0.55)" }}>
+              Deep Dive · {mission.eyebrow}
+            </div>
+            <div className="text-lg font-black truncate" style={{ fontFamily: "Georgia, serif" }}>
+              {countryIcon(country)} {country.name}
+            </div>
+          </div>
+
+          <button
+            onClick={onVote}
+            className="shrink-0 rounded-2xl px-4 py-2 text-xs font-black"
+            style={
+              selected
+                ? { background: "rgba(243,213,138,0.12)", color: COLORS.champagneLight, border: "1px solid rgba(243,213,138,0.28)" }
+                : { background: `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne}, ${COLORS.ember})`, color: COLORS.midnight }
+            }
+          >
+            {selected ? "✓ Voted" : mission.voteLabel}
+          </button>
+        </div>
+
+        <div className="relative h-56 sm:h-72 shrink-0 overflow-hidden">
+          <img
+            src={country.image}
+            alt={country.name}
+            className="absolute inset-0 w-full h-full"
+            style={{ objectFit: "cover" }}
+          />
+          <div
+            className="absolute inset-0"
+            style={{
+              background:
+                "linear-gradient(180deg, rgba(4,3,0,0.14) 0%, transparent 40%, rgba(4,3,0,0.82) 100%), " +
+                "radial-gradient(circle at 18% 12%, rgba(196,150,42,0.22), transparent 32%)",
+            }}
+          />
+          <div className="absolute bottom-4 left-5 right-5">
+            <div className="text-[10px] uppercase tracking-[0.24em] font-black" style={{ color: "rgba(243,213,138,0.8)" }}>
+              {country.region} · {country.note}
+            </div>
+            <div className="flex gap-3 mt-2">
+              <span className="rounded-full px-3 py-1 text-xs font-bold bg-black/40 border border-white/10" style={{ color: COLORS.champagneLight }}>
+                {country.cost} cost
+              </span>
+              <span className="rounded-full px-3 py-1 text-xs font-bold bg-black/40 border border-white/10" style={{ color: COLORS.champagneLight }}>
+                {country.travel} flight
+              </span>
+              <span className="rounded-full px-3 py-1 text-xs font-bold bg-black/40 border border-white/10" style={{ color: COLORS.champagneLight }}>
+                Fit: {country.fit}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <div className="px-5 pb-8 space-y-6 pt-5">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <DeepDiveStat icon="✈️" label="Flight from Denver" value={data.flightFromDenver || "—"} />
+            <DeepDiveStat icon="💰" label="Estimated cost" value={data.costRange || "—"} />
+            <DeepDiveStat icon="🌤️" label="Best window" value={data.bestWindow || "—"} />
+          </div>
+
+          {data.experiences?.length > 0 && (
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.26em] font-black mb-3" style={{ color: "#FFD880" }}>
+                Signature experiences
+              </div>
+              <div className="space-y-2">
+                {data.experiences.map((exp, i) => (
+                  <div
+                    key={i}
+                    className="flex items-start gap-3 rounded-2xl px-4 py-3 border"
+                    style={{
+                      background: "rgba(196,150,42,0.05)",
+                      borderColor: "rgba(196,150,42,0.14)",
+                    }}
+                  >
+                    <span className="shrink-0 text-sm" style={{ color: COLORS.gold }}>◆</span>
+                    <span className="text-sm text-white/78 leading-5">{exp}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {data.culturalNotes && (
+            <div
+              className="rounded-2xl px-4 py-4 border"
+              style={{
+                background: "rgba(255,232,163,0.04)",
+                borderColor: "rgba(243,213,138,0.16)",
+              }}
+            >
+              <div className="text-[10px] uppercase tracking-[0.26em] font-black mb-2" style={{ color: "#FFD880" }}>
+                Cultural notes
+              </div>
+              <p className="text-sm text-white/70 leading-6">{data.culturalNotes}</p>
+            </div>
+          )}
+
+          {data.porterVibe && (
+            <div
+              className="rounded-2xl px-4 py-4 border"
+              style={{
+                background: "rgba(196,150,42,0.06)",
+                borderColor: "rgba(196,150,42,0.20)",
+              }}
+            >
+              <div className="text-[10px] uppercase tracking-[0.26em] font-black mb-2" style={{ color: "#FFD880" }}>
+                Porter read
+              </div>
+              <p className="text-sm text-white/75 leading-6 italic">{data.porterVibe}</p>
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-2 pt-1">
+            {country.reasons?.map((reason) => (
+              <span
+                key={reason}
+                className="rounded-full border px-3 py-1 text-xs font-bold"
+                style={{ background: "rgba(196,150,42,0.08)", borderColor: "rgba(196,150,42,0.18)", color: "#FFD880" }}
+              >
+                {reason}
+              </span>
+            ))}
+          </div>
+
+          <button
+            onClick={onVote}
+            className="w-full rounded-2xl px-4 py-4 font-black uppercase tracking-[0.08em] text-base"
+            style={
+              selected
+                ? { background: "rgba(243,213,138,0.10)", color: COLORS.champagneLight, border: "1px solid rgba(243,213,138,0.28)" }
+                : { background: `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne}, ${COLORS.ember})`, color: COLORS.midnight }
+            }
+          >
+            {selected ? "✓ Vote cast for " + country.name : mission.voteLabel + " — " + country.name}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DeepDiveStat({ icon, label, value }) {
+  return (
+    <div
+      className="rounded-2xl px-3 py-3 border"
+      style={{ background: "rgba(0,0,0,0.30)", borderColor: "rgba(196,150,42,0.14)" }}
+    >
+      <div className="text-lg mb-1">{icon}</div>
+      <div className="text-[9px] uppercase tracking-[0.18em] text-white/38 font-black mb-1">{label}</div>
+      <div className="text-xs font-bold leading-4" style={{ color: COLORS.champagneLight }}>{value}</div>
+    </div>
+  );
+}
+
+function DestinationLockedOverlay({ anchorWinner, companionWinner, onDismiss }) {
+  return (
+    <div className="absolute inset-0 z-[200] flex items-center justify-center celebration-enter">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+      <ConfettiLayer />
+
+      <div
+        className="relative z-10 mx-5 max-w-md w-full rounded-[2rem] overflow-hidden border"
+        style={{
+          background:
+            "linear-gradient(155deg, rgba(12,8,0,0.96) 0%, rgba(6,4,0,0.94) 100%), radial-gradient(circle at 30% 10%, rgba(196,150,42,0.28), transparent 50%)",
+          borderColor: "rgba(243,213,138,0.34)",
+          boxShadow:
+            "0 0 80px rgba(196,150,42,0.26), 0 0 160px rgba(196,150,42,0.12), inset 0 0 60px rgba(196,150,42,0.05)",
+        }}
+      >
+        <CornerBrackets />
+
+        <div className="relative p-7 text-center">
+          <div
+            className="inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.28em] mb-4"
+            style={{ borderColor: "rgba(243,213,138,0.30)", color: "#FFD880", background: "rgba(196,150,42,0.08)" }}
+          >
+            <span className="h-1.5 w-1.5 rounded-full bg-[#E8B84B] animate-pulse" />
+            Route locked
+          </div>
+
+          <h1 className="text-5xl font-black" style={{ fontFamily: "Georgia, serif", color: COLORS.champagneLight }}>
+            {countryIcon(anchorWinner)}
+          </h1>
+          <h1 className="text-5xl font-black mt-1" style={{ fontFamily: "Georgia, serif", color: COLORS.champagneLight }}>
+            {countryIcon(companionWinner)}
+          </h1>
+
+          <div className="mt-4">
+            <div className="text-2xl font-black" style={{ fontFamily: "Georgia, serif" }}>
+              {anchorWinner.name}
+            </div>
+            <div className="text-sm text-white/40 my-1">+</div>
+            <div className="text-2xl font-black" style={{ fontFamily: "Georgia, serif" }}>
+              {companionWinner.name}
+            </div>
+          </div>
+
+          <p className="mt-5 text-sm text-white/60 leading-6">
+            The Global 85 destination is locked. Porter is briefing the full itinerary.
+          </p>
+
+          {TRIP_DATE && <TripCountdownMini tripDate={TRIP_DATE} />}
+
+          <button
+            onClick={onDismiss}
+            className="mt-6 w-full rounded-2xl px-4 py-4 font-black text-base"
+            style={{
+              background: `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne}, ${COLORS.ember})`,
+              color: COLORS.midnight,
+            }}
+          >
+            View the route →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConfettiLayer() {
+  const pieces = useMemo(
+    () =>
+      Array.from({ length: 55 }, (_, i) => ({
+        id: i,
+        x: Math.random() * 100,
+        delay: Math.random() * 2.5,
+        duration: 2.2 + Math.random() * 2,
+        color: ["#F3D58A", "#E8B84B", "#C4962A", "#BA0C2F", "#ffffff", "#FFE8A3", "#C65A2E"][
+          Math.floor(Math.random() * 7)
+        ],
+        size: 6 + Math.random() * 9,
+        rotate: Math.random() * 360,
+      })),
+    []
+  );
+
+  return (
+    <div className="pointer-events-none absolute inset-0 overflow-hidden">
+      {pieces.map((p) => (
+        <div
+          key={p.id}
+          style={{
+            position: "absolute",
+            left: `${p.x}%`,
+            top: "-20px",
+            width: p.size,
+            height: p.size * 0.55,
+            background: p.color,
+            borderRadius: "2px",
+            animation: `confettiFall ${p.duration}s ${p.delay}s ease-in both`,
+            transform: `rotate(${p.rotate}deg)`,
+            opacity: 0.9,
+          }}
+        />
+      ))}
+    </div>
+  );
+}
+
+function TripCountdownMini({ tripDate }) {
+  const [timeLeft, setTimeLeft] = useState(null);
+
+  useEffect(() => {
+    function calc() {
+      const diff = new Date(tripDate) - new Date();
+      if (diff <= 0) return setTimeLeft({ days: 0, hours: 0, minutes: 0 });
+      setTimeLeft({
+        days: Math.floor(diff / 86400000),
+        hours: Math.floor((diff % 86400000) / 3600000),
+        minutes: Math.floor((diff % 3600000) / 60000),
+      });
+    }
+    calc();
+    const id = setInterval(calc, 60000);
+    return () => clearInterval(id);
+  }, [tripDate]);
+
+  if (!timeLeft) return null;
+
+  return (
+    <div className="mt-5 flex justify-center gap-5">
+      {[["days", timeLeft.days], ["hrs", timeLeft.hours], ["min", timeLeft.minutes]].map(([label, val]) => (
+        <div key={label} className="text-center">
+          <div className="text-3xl font-black tabular-nums" style={{ color: COLORS.champagneLight }}>
+            {String(val).padStart(2, "0")}
+          </div>
+          <div className="text-[10px] uppercase tracking-wide text-white/40 mt-0.5">{label}</div>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -2336,15 +3004,15 @@ function DestinationConsole({
       className="rounded-[1.5rem] border p-2.5 backdrop-blur-2xl sm:rounded-[1.8rem] sm:p-3"
       style={{
         background:
-          "linear-gradient(180deg, rgba(8,4,14,0.58), rgba(0,0,0,0.50)), radial-gradient(circle at 50% 0%, rgba(125,235,255,0.14), transparent 60%)",
-        borderColor: "rgba(125,235,255,0.22)",
+          "linear-gradient(180deg, rgba(14,3,4,0.62), rgba(0,0,0,0.52)), radial-gradient(circle at 50% 0%, rgba(196,150,42,0.14), transparent 60%)",
+        borderColor: "rgba(196,150,42,0.24)",
         boxShadow:
-          "0 -10px 50px rgba(125,235,255,0.08), 0 22px 95px rgba(0,0,0,0.84), inset 0 1px 0 rgba(255,232,163,0.08)",
+          "0 -10px 50px rgba(196,150,42,0.07), 0 22px 95px rgba(0,0,0,0.84), inset 0 1px 0 rgba(255,232,163,0.08)",
       }}
     >
       <div className="mb-2 flex items-center justify-between gap-3 px-1">
         <div className="min-w-0">
-          <p className="text-[9px] uppercase tracking-[0.28em] font-black" style={{ color: "#bdf8ff" }}>
+          <p className="text-[9px] uppercase tracking-[0.28em] font-black" style={{ color: "#FFD880" }}>
             Destination console
           </p>
           <p className="hidden truncate text-[11px] uppercase tracking-[0.16em] text-white/38 sm:block">
@@ -2357,9 +3025,9 @@ function DestinationConsole({
             onClick={onPorterPick}
             className="rounded-full border px-3 py-2 text-[9px] font-black uppercase tracking-[0.14em] sm:text-[10px]"
             style={{
-              background: "rgba(125,235,255,0.08)",
-              borderColor: "rgba(125,235,255,0.20)",
-              color: "#bdf8ff",
+              background: "rgba(196,150,42,0.08)",
+              borderColor: "rgba(196,150,42,0.22)",
+              color: "#FFD880",
             }}
           >
             Porter
@@ -2396,15 +3064,15 @@ function DestinationConsole({
                 background: selected
                   ? `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne})`
                   : active
-                    ? "rgba(125,235,255,0.14)"
-                    : "rgba(255,255,255,0.045)",
-                color: selected ? COLORS.midnight : "rgba(255,255,255,0.72)",
+                    ? "rgba(196,150,42,0.18)"
+                    : "rgba(255,255,255,0.038)",
+                color: selected ? COLORS.midnight : "rgba(255,255,255,0.76)",
                 borderColor: selected
                   ? "transparent"
                   : active
-                    ? "rgba(125,235,255,0.44)"
+                    ? "rgba(196,150,42,0.52)"
                     : "rgba(255,255,255,0.09)",
-                boxShadow: active ? "0 0 22px rgba(125,235,255,0.12)" : "none",
+                boxShadow: active ? "0 0 22px rgba(196,150,42,0.14)" : "none",
               }}
             >
               <div className="flex items-center justify-between gap-2">
@@ -2422,57 +3090,6 @@ function DestinationConsole({
   );
 }
 
-function FloorEmitter({ active }) {
-  return (
-    <div className="relative h-[230px] w-[min(90vw,700px)]">
-      <div
-        className="absolute left-1/2 top-1/2 h-[132px] w-[600px] -translate-x-1/2 -translate-y-1/2 rounded-full"
-        style={{
-          background:
-            "radial-gradient(circle, rgba(255,255,255,0.42), rgba(125,235,255,0.30) 24%, rgba(255,79,216,0.24) 43%, transparent 70%)",
-          transform: "translate(-50%, -50%) rotateX(64deg)",
-          boxShadow: active
-            ? "0 0 95px rgba(125,235,255,0.38), 0 0 120px rgba(255,79,216,0.36)"
-            : "0 0 86px rgba(125,235,255,0.28)",
-        }}
-      />
-
-      <div
-        className="absolute left-1/2 top-1/2 h-[190px] w-[590px] rounded-full opacity-80"
-        style={{
-          background:
-            "conic-gradient(from 0deg, transparent, rgba(125,235,255,.36), transparent, rgba(255,79,216,.32), transparent, rgba(243,213,138,.18), transparent)",
-          filter: "blur(.3px)",
-          animation: "floorSpin 18s linear infinite",
-        }}
-      />
-
-      {[0, 1, 2, 3, 4].map((ring) => (
-        <div
-          key={ring}
-          className="absolute left-1/2 top-1/2 rounded-full border"
-          style={{
-            width: `${236 + ring * 86}px`,
-            height: `${62 + ring * 19}px`,
-            transform: "translate(-50%, -50%) rotateX(64deg)",
-            borderColor: ring % 2 === 0 ? "rgba(125,235,255,0.46)" : "rgba(255,79,216,0.34)",
-            boxShadow: ring === 0 ? "0 0 26px rgba(125,235,255,0.52)" : "none",
-          }}
-        />
-      ))}
-
-      <div
-        className="absolute left-1/2 top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full"
-        style={{
-          background: "#ffffff",
-          boxShadow:
-            "0 0 18px #ffffff, 0 0 48px rgba(125,235,255,0.92), 0 0 100px rgba(255,79,216,0.46)",
-        }}
-      />
-    </div>
-  );
-}
-
 function ChamberReticle({ activeCountry, pulseKey }) {
   return (
     <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
@@ -2481,25 +3098,25 @@ function ChamberReticle({ activeCountry, pulseKey }) {
         style={{
           width: "min(78vw, 720px)",
           height: "min(78vw, 720px)",
-          border: "1px solid rgba(125,235,255,0.13)",
-          boxShadow: "inset 0 0 70px rgba(125,235,255,0.035), 0 0 70px rgba(255,79,216,0.035)",
+          border: "1px solid rgba(196,150,42,0.18)",
+          boxShadow: "inset 0 0 70px rgba(196,150,42,0.030), 0 0 70px rgba(196,150,42,0.030)",
         }}
       >
         <div
           className="absolute left-1/2 top-0 bottom-0"
           style={{
             width: "1px",
-            background: "linear-gradient(180deg, transparent, rgba(125,235,255,0.22), transparent)",
+            background: "linear-gradient(180deg, transparent, rgba(196,150,42,0.26), transparent)",
           }}
         />
         <div
           className="absolute top-1/2 left-0 right-0"
           style={{
             height: "1px",
-            background: "linear-gradient(90deg, transparent, rgba(255,79,216,0.22), transparent)",
+            background: "linear-gradient(90deg, transparent, rgba(196,150,42,0.26), transparent)",
           }}
         />
-        <div className="absolute inset-[18%] rounded-full" style={{ border: "1px dashed rgba(125,235,255,0.12)" }} />
+        <div className="absolute inset-[18%] rounded-full" style={{ border: "1px dashed rgba(196,150,42,0.16)" }} />
         <div className="absolute inset-[32%] rounded-full" style={{ border: "1px solid rgba(243,213,138,0.08)" }} />
       </div>
 
