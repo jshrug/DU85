@@ -1066,16 +1066,69 @@ function TripCountdownSection({ tripDate, anchorWinner, companionWinner }) {
   );
 }
 
+const DEPARTURE_DATE = new Date("2027-05-23T00:00:00");
+
+function timeUntilDeparture() {
+  const now = new Date();
+  let years = DEPARTURE_DATE.getFullYear() - now.getFullYear();
+  let months = DEPARTURE_DATE.getMonth() - now.getMonth();
+  let days = DEPARTURE_DATE.getDate() - now.getDate();
+  if (days < 0) { months -= 1; days += new Date(DEPARTURE_DATE.getFullYear(), DEPARTURE_DATE.getMonth(), 0).getDate(); }
+  if (months < 0) { years -= 1; months += 12; }
+  return { months: Math.max(0, months), days: Math.max(0, days) };
+}
+
 function HomePage({ onAsk }) {
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const displayName = user?.user_metadata?.display_name || "";
   const { anchorWinner, companionWinner } = useLockedDestinations();
   const routeLocked = Boolean(anchorWinner && companionWinner);
+  const [timeLeft, setTimeLeft] = useState(timeUntilDeparture);
+
+  useEffect(() => {
+    const midnight = new Date();
+    midnight.setHours(24, 0, 0, 0);
+    const t = setTimeout(() => setTimeLeft(timeUntilDeparture()), midnight - new Date());
+    return () => clearTimeout(t);
+  }, [timeLeft]);
 
   return (
     <main className="py-5">
       {routeLocked && TRIP_DATE && (
         <TripCountdownSection tripDate={TRIP_DATE} anchorWinner={anchorWinner} companionWinner={companionWinner} />
       )}
+
+      {/* Greeting + countdown */}
+      <div className="px-5 mb-1 flex items-end justify-between">
+        <div>
+          <div className="text-2xl font-black leading-tight" style={{ fontFamily: "Georgia, serif" }}>
+            {displayName ? `Hey, ${displayName}.` : "Global 85"}
+          </div>
+          <div className="text-xs uppercase tracking-[0.20em] mt-1" style={{ color: "rgba(255,255,255,0.35)" }}>
+            Your trip is coming
+          </div>
+        </div>
+        <div className="flex items-end gap-4">
+          {[
+            { value: timeLeft.months, label: timeLeft.months === 1 ? "month" : "months" },
+            { value: timeLeft.days,   label: timeLeft.days   === 1 ? "day"   : "days"   },
+          ].map(({ value, label }) => (
+            <div key={label} className="text-right">
+              <div style={{
+                fontFamily: "Georgia, serif", fontSize: "40px", fontWeight: 700,
+                lineHeight: 1, letterSpacing: "-1px",
+                background: `linear-gradient(135deg, ${COLORS.goldLight} 0%, ${COLORS.champagne} 45%, ${COLORS.gold} 100%)`,
+                WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
+              }}>{value}</div>
+              <div style={{
+                fontSize: "10px", letterSpacing: "0.18em", textTransform: "uppercase",
+                color: "rgba(255,255,255,0.40)", fontWeight: 600, marginTop: "2px",
+              }}>{label}</div>
+            </div>
+          ))}
+        </div>
+      </div>
 
       <div className="px-5 mt-5">
       <section
