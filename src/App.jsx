@@ -885,10 +885,13 @@ function SideDrawer({ open, onClose }) {
                 className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-black shrink-0"
                 style={{ background: `linear-gradient(135deg, ${COLORS.champagne}, ${COLORS.ember})`, color: COLORS.midnight }}
               >
-                {(user.email?.[0] || "?").toUpperCase()}
+                {(user.user_metadata?.display_name?.[0] || user.email?.[0] || "?").toUpperCase()}
               </div>
               <div className="min-w-0 flex-1">
-                <div className="text-xs font-bold truncate text-white/80">{user.email}</div>
+                {user.user_metadata?.display_name && (
+                  <div className="text-sm font-black text-white truncate">{user.user_metadata.display_name}</div>
+                )}
+                <div className="text-xs truncate text-white/45">{user.email}</div>
                 <button
                   onClick={() => { signOut(); onClose(); }}
                   className="text-[10px] uppercase tracking-widest mt-0.5"
@@ -3572,13 +3575,14 @@ function SectionTitle({ eyebrow, title }) {
 }
 
 export default function App() {
+  const { user } = useAuth();
   const [showSplash, setShowSplash] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const navigate = useNavigate();
 
   return (
     <>
-      {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
+      {showSplash && <SplashScreen user={user} onComplete={() => setShowSplash(false)} />}
 
       <Shell drawerOpen={drawerOpen} setDrawerOpen={setDrawerOpen}>
         <Routes>

@@ -3,6 +3,7 @@ import { subscribeAnnouncements } from "../lib/announcements";
 import AnnouncementCard from "../components/features/AnnouncementCard.jsx";
 import AnnouncementEditorModal from "../components/features/AnnouncementEditorModal.jsx";
 import { subscribeIsAdmin } from "../lib/admins";
+import { useAuth } from "../lib/AuthContext.jsx";
 
 // ── Weather ───────────────────────────────────────────────────────────────────
 const WEATHER_CITIES = [
@@ -108,17 +109,43 @@ function WeatherWidget() {
   );
 }
 
+// ── Countdown ────────────────────────────────────────────────────────────────
+const DEPARTURE = new Date("2027-05-23T00:00:00");
+
+function timeUntilDeparture() {
+  const now = new Date();
+  let years = DEPARTURE.getFullYear() - now.getFullYear();
+  let months = DEPARTURE.getMonth() - now.getMonth();
+  let days = DEPARTURE.getDate() - now.getDate();
+  if (days < 0) {
+    months -= 1;
+    days += new Date(DEPARTURE.getFullYear(), DEPARTURE.getMonth(), 0).getDate();
+  }
+  if (months < 0) { years -= 1; months += 12; }
+  return { years: Math.max(0, years), months: Math.max(0, months), days: Math.max(0, days) };
+}
+
 // ── Home ──────────────────────────────────────────────────────────────────────
 export default function Home({ onOpenDrawer }) {
+  const { user } = useAuth();
+  const displayName = user?.user_metadata?.display_name || "";
   const [items, setItems]     = useState([]);
   const [openNew, setOpenNew] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(timeUntilDeparture);
 
   useEffect(() => {
     const t = setTimeout(() => setMounted(true), 60);
     return () => clearTimeout(t);
   }, []);
+
+  useEffect(() => {
+    const midnight = new Date();
+    midnight.setHours(24, 0, 0, 0);
+    const t = setTimeout(() => setTimeLeft(timeUntilDeparture()), midnight - new Date());
+    return () => clearTimeout(t);
+  }, [timeLeft]);
 
   useEffect(() => {
     const unsub = subscribeIsAdmin(setIsAdmin);
@@ -184,15 +211,15 @@ export default function Home({ onOpenDrawer }) {
             }}>84</span>
           </div>
 
-          {/* Line 2: Creating Global Leaders */}
+          {/* Line 2: Greeting or tagline */}
           <p className="mt-12 transition-all duration-700 ease-out" style={{
             fontFamily: "Georgia, serif", fontSize: "18px",
             fontStyle: "italic", color: "#ffffff",
-            marginLeft: "8px", 
+            marginLeft: "8px",
             opacity: mounted ? 1 : 0,
             transform: mounted ? "translateY(0)" : "translateY(8px)",
             transitionDelay: "160ms",
-          }}>Creating Global Leaders</p>
+          }}>{displayName ? `Hey, ${displayName}.` : "Creating Global Leaders"}</p>
 
           {/* Line 4: Gold accent line */}
           <div className="mt-1 transition-all duration-700 ease-out" style={{
@@ -212,11 +239,39 @@ export default function Home({ onOpenDrawer }) {
             opacity: mounted ? 1 : 0,
             transform: mounted ? "translateY(0)" : "translateY(10px)",
             transitionDelay: "320ms",
-            marginLeft: "8px", 
+            marginLeft: "8px",
           }}>
             <span style={{ fontSize: "16px", color: "#ffffff" }}>Singapore</span>
             <span style={{ color: "#ffffff", fontSize: "9px" }}>◆</span>
             <span style={{ fontSize: "16px", color: "#ffffff" }}>Vietnam</span>
+          </div>
+
+          {/* Countdown */}
+          <div className="mt-5 transition-all duration-700 ease-out" style={{
+            opacity: mounted ? 1 : 0,
+            transform: mounted ? "translateY(0)" : "translateY(10px)",
+            transitionDelay: "400ms",
+            marginLeft: "8px",
+          }}>
+            <div className="flex items-end gap-4">
+              {[
+                { value: timeLeft.months, label: timeLeft.months === 1 ? "month" : "months" },
+                { value: timeLeft.days,   label: timeLeft.days   === 1 ? "day"   : "days"   },
+              ].map(({ value, label }) => (
+                <div key={label}>
+                  <div style={{
+                    fontFamily: "Georgia, serif", fontSize: "48px", fontWeight: 700,
+                    lineHeight: 1, letterSpacing: "-1px",
+                    background: "linear-gradient(135deg, #e8b84b 0%, #f5d47a 45%, #c4862a 100%)",
+                    WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
+                  }}>{value}</div>
+                  <div style={{
+                    fontSize: "10px", letterSpacing: "0.20em", textTransform: "uppercase",
+                    color: "rgba(255,255,255,0.45)", fontWeight: 600, marginTop: "2px",
+                  }}>{label}</div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
