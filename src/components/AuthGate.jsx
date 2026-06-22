@@ -1,250 +1,154 @@
-import { upsertMemberProfile } from "../lib/members";
-import { useEffect, useState } from "react";
-import { onAuthStateChanged } from "firebase/auth";
-import { doc, updateDoc, getDoc } from "firebase/firestore";
-import { auth, db, COHORT_ID } from "../lib/firebase";
-import { sendDuSignInLink, completeEmailLinkSignIn } from "../lib/auth";
+import { useAuth } from "../lib/AuthContext.jsx";
 
-// ── Name prompt ────────────────────────────────────────────────────────────────
-// Shown once to any user whose displayName is missing or defaulted to "member".
+const C = {
+  midnight: "#05050A",
+  wine: "#1A0710",
+  champagne: "#F3D58A",
+  ember: "#C65A2E",
+  crimson: "#BA0C2F",
+};
 
-function NamePrompt({ user, onComplete }) {
-  const [name, setName] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+function GoogleIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+      <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+      <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+      <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+    </svg>
+  );
+}
 
-  async function handleSave() {
-    const trimmed = name.trim();
-    if (!trimmed) { setError("Please enter your name."); return; }
-    if (trimmed.length < 2) { setError("Name must be at least 2 characters."); return; }
-    setSaving(true);
-    try {
-      await updateDoc(
-        doc(db, "cohorts", COHORT_ID, "members", user.uid),
-        { displayName: trimmed }
-      );
-      onComplete();
-    } catch (e) {
-      console.error("Name save failed:", e);
-      setError("Couldn't save your name. Please try again.");
-      setSaving(false);
-    }
-  }
+function Corner({ pos }) {
+  const s = {
+    tl: { top: 0, left: 0, borderTop: "1px solid", borderLeft: "1px solid" },
+    tr: { top: 0, right: 0, borderTop: "1px solid", borderRight: "1px solid" },
+    bl: { bottom: 0, left: 0, borderBottom: "1px solid", borderLeft: "1px solid" },
+    br: { bottom: 0, right: 0, borderBottom: "1px solid", borderRight: "1px solid" },
+  }[pos];
+  return (
+    <div className="absolute w-4 h-4" style={{ ...s, borderColor: `${C.champagne}55` }} />
+  );
+}
 
-  function handleKeyDown(e) {
-    if (e.key === "Enter") handleSave();
-  }
-
+function LoginScreen({ wrongDomain }) {
+  const { signIn } = useAuth();
   return (
     <div
-      className="min-h-screen flex items-center justify-center p-6"
-      style={{ background: "linear-gradient(160deg,#0d0103 0%,#1c0408 55%,#2a0a10 100%)" }}
+      className="min-h-screen flex flex-col items-center justify-center px-6"
+      style={{
+        background:
+          `radial-gradient(circle at 18% 18%, ${C.champagne}18, transparent 38%), ` +
+          `radial-gradient(circle at 82% 78%, ${C.ember}1e, transparent 34%), ` +
+          `linear-gradient(160deg, ${C.wine} 0%, ${C.midnight} 55%, #030306 100%)`,
+      }}
     >
-      <div style={{
-        width: "100%", maxWidth: 400,
-        background: "rgba(255,255,255,0.04)",
-        border: "1px solid rgba(196,150,42,0.25)",
-        borderRadius: 16, padding: "36px 28px",
-      }}>
-        {/* Logo */}
-        <div style={{ marginBottom: 28, textAlign: "center" }}>
-          <div style={{
-            fontFamily: "Georgia, serif", fontSize: 28, fontWeight: 700, color: "#ffffff",
-          }}>
-            Global{" "}
-            <span style={{
-              background: "linear-gradient(135deg,#e8b84b 0%,#f5d47a 45%,#c4862a 100%)",
-              WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
-            }}>84</span>
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-10">
+          <div
+            className="text-[10px] uppercase tracking-[0.36em] font-bold mb-2"
+            style={{ color: `${C.champagne}99` }}
+          >
+            DU MBA · Cohort 85
           </div>
-          <div style={{
-            fontSize: 10, letterSpacing: "0.18em", textTransform: "uppercase",
-            color: "rgba(196,150,42,0.65)", marginTop: 4,
-          }}>
-            Welcome
+          <div
+            className="text-5xl font-black tracking-tight"
+            style={{ fontFamily: "Georgia, serif", color: "#fff" }}
+          >
+            Global <span style={{ color: C.champagne }}>85</span>
           </div>
+          <p className="mt-3 text-sm" style={{ color: "rgba(255,255,255,0.45)" }}>
+            Private trip portal — cohort access only
+          </p>
         </div>
 
-        <h2 style={{
-          fontFamily: "Georgia, serif", fontSize: 20, fontWeight: 700,
-          color: "#ffffff", marginBottom: 8,
-        }}>
-          What's your name?
-        </h2>
-        <p style={{ fontSize: 13, color: "rgba(255,255,255,0.45)", marginBottom: 24, lineHeight: 1.5 }}>
-          This is how you'll appear in chat, events, and the gallery. You can change it later on your Me page.
-        </p>
-
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => { setName(e.target.value); setError(""); }}
-          onKeyDown={handleKeyDown}
-          placeholder="Your full name"
-          autoFocus
-          maxLength={60}
+        <div
+          className="relative rounded-3xl p-8 border"
           style={{
-            width: "100%", background: "rgba(255,255,255,0.08)",
-            border: `1px solid ${error ? "rgba(186,12,47,0.7)" : "rgba(196,150,42,0.3)"}`,
-            borderRadius: 10, color: "#fff",
-            padding: "11px 14px", fontSize: 15, outline: "none",
-            boxSizing: "border-box",
-          }}
-        />
-
-        {error && (
-          <p style={{ fontSize: 12, color: "#ff6b6b", marginTop: 6 }}>{error}</p>
-        )}
-
-        <button
-          onClick={handleSave}
-          disabled={saving || !name.trim()}
-          style={{
-            marginTop: 20, width: "100%",
-            background: saving || !name.trim()
-              ? "rgba(196,150,42,0.25)"
-              : "linear-gradient(135deg,#e8b84b 0%,#c4862a 100%)",
-            color: saving || !name.trim() ? "rgba(255,255,255,0.3)" : "#1a0a00",
-            border: "none", borderRadius: 10,
-            padding: "13px", fontSize: 15, fontWeight: 700,
-            cursor: saving || !name.trim() ? "not-allowed" : "pointer",
-            transition: "all 0.2s",
+            background: "rgba(255,255,255,0.05)",
+            borderColor: "rgba(255,255,255,0.10)",
+            backdropFilter: "blur(12px)",
           }}
         >
-          {saving ? "Saving…" : "Let's go →"}
-        </button>
+          <Corner pos="tl" /><Corner pos="tr" /><Corner pos="bl" /><Corner pos="br" />
+
+          {wrongDomain && (
+            <div
+              className="mb-5 rounded-2xl px-4 py-3 text-sm text-center"
+              style={{
+                background: `${C.crimson}33`,
+                border: `1px solid ${C.crimson}66`,
+                color: "#fca5a5",
+              }}
+            >
+              That account isn't on the cohort list.
+              <br />
+              Sign in with your <strong>@du.edu</strong> Google account.
+            </div>
+          )}
+
+          <p className="text-sm mb-6 text-center" style={{ color: "rgba(255,255,255,0.65)" }}>
+            Sign in with your University of Denver Google account to access the portal.
+          </p>
+
+          <button
+            onClick={signIn}
+            className="w-full flex items-center justify-center gap-3 rounded-2xl px-5 py-4 font-bold text-sm transition-all hover:scale-[1.02] active:scale-[0.98]"
+            style={{
+              background: "#fff",
+              color: "#111",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.4)",
+            }}
+          >
+            <GoogleIcon />
+            Continue with Google
+          </button>
+
+          <p className="mt-5 text-center text-xs" style={{ color: "rgba(255,255,255,0.28)" }}>
+            @du.edu accounts only
+          </p>
+        </div>
       </div>
     </div>
   );
 }
 
-// ── AuthGate ───────────────────────────────────────────────────────────────────
-
-export default function AuthGate({ children }) {
-  const [user, setUser] = useState(null);
-  const [checking, setChecking] = useState(true);
-  const [needsName, setNeedsName] = useState(false);
-
-  const [email, setEmail] = useState("");
-  const [status, setStatus] = useState("");
-  const [error, setError] = useState("");
-
-  // Complete email-link sign-in if URL contains Firebase action params
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await completeEmailLinkSignIn();
-        if (res?.didSignIn) {
-          window.history.replaceState({}, document.title, window.location.pathname);
-        }
-      } catch (e) {
-        console.error("Email link sign-in completion failed:", e);
-        setError(e?.message || "Could not complete sign-in from email link.");
-      }
-    })();
-  }, []);
-
-  // Handoff from launch page: /?email=<du-email> auto-sends the sign-in link
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const handoff = (params.get("email") || "").trim().toLowerCase();
-    if (!handoff) return;
-    window.history.replaceState({}, document.title, window.location.pathname);
-    setEmail(handoff);
-    (async () => {
-      try {
-        await sendDuSignInLink(handoff);
-        setStatus("Check your inbox. Click the link to finish signing in.");
-      } catch (e) {
-        setError(e?.message || "Could not send sign-in link.");
-      }
-    })();
-  }, []);
-
-  // Listen for auth state changes
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (u) => {
-      try {
-        if (u) {
-          await upsertMemberProfile(u);
-          // Read the member doc directly after upsert to check displayName.
-          // If absent or still the placeholder "member", show the name prompt.
-          const memberSnap = await getDoc(
-            doc(db, "cohorts", COHORT_ID, "members", u.uid)
-          );
-          const dn = memberSnap.exists() ? (memberSnap.data().displayName ?? "") : "";
-          if (!dn || dn === "member") {
-            setNeedsName(true);
-          }
-        }
-        setUser(u || null);
-      } catch (e) {
-        console.error("Member upsert failed:", e);
-        setError(e?.message || "Signed in, but profile setup failed.");
-        setUser(u || null);
-      } finally {
-        setChecking(false);
-      }
-    });
-    return () => unsub();
-  }, []);
-
-  if (checking) return null;
-
-  // ── Sign-in screen ───────────────────────────────────────────────────────────
-  if (!user) {
-    return (
-      <div className="min-h-screen bg-surface-light dark:bg-surface-dark flex items-center justify-center p-6">
-        <div className="w-full max-w-md bg-surface-card dark:bg-surface-darkCard border border-surface-border dark:border-surface-darkBorder rounded-xl shadow-card p-6">
-          <div className="text-xl font-semibold text-ink-main dark:text-ink-onDark">Global 84</div>
-          <div className="mt-2 text-sm text-ink-sub dark:text-ink-subOnDark">
-            Enter your DU email and we'll send you a sign-in link.
-          </div>
-
-          <label className="block mt-4">
-            <div className="text-xs font-semibold text-ink-sub dark:text-ink-subOnDark mb-1">
-              DU Email
-            </div>
-            <input
-              className="w-full rounded-lg border border-surface-border dark:border-surface-darkBorder bg-white dark:bg-surface-darkCard px-3 py-2 text-sm text-ink-main dark:text-ink-onDark focus:outline-none focus:ring-2 focus:ring-du-gold"
-              placeholder="name@du.edu"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              autoComplete="email"
+function LoadingScreen() {
+  return (
+    <div
+      className="min-h-screen flex items-center justify-center"
+      style={{
+        background: `linear-gradient(160deg, ${C.wine} 0%, ${C.midnight} 60%, #030306 100%)`,
+      }}
+    >
+      <div className="text-center">
+        <div
+          className="text-3xl font-black"
+          style={{ fontFamily: "Georgia, serif", color: C.champagne }}
+        >
+          G<span style={{ color: "#fff" }}>85</span>
+        </div>
+        <div className="mt-3 flex gap-1.5 justify-center">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="w-1.5 h-1.5 rounded-full"
+              style={{
+                background: C.champagne,
+                opacity: 0.6,
+                animation: `pulse 1.2s ease-in-out ${i * 0.2}s infinite`,
+              }}
             />
-          </label>
-
-          {error ? <div className="mt-3 text-sm text-du-crimson">{error}</div> : null}
-          {status ? <div className="mt-3 text-sm text-ink-sub dark:text-ink-subOnDark">{status}</div> : null}
-
-          <button
-            className="mt-5 w-full rounded-lg bg-du-crimson text-white py-3 text-sm font-semibold hover:bg-du-crimsonDark transition"
-            onClick={async () => {
-              setError("");
-              setStatus("");
-              try {
-                await sendDuSignInLink(email);
-                setStatus("Check your inbox. Click the link to finish signing in.");
-              } catch (e) {
-                setError(e?.message || "Could not send sign-in link.");
-              }
-            }}
-          >
-            Send sign-in link
-          </button>
-
-          <div className="mt-3 text-xs text-ink-muted dark:text-ink-subOnDark">
-            DU email required (@du.edu)
-          </div>
+          ))}
         </div>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
-  // ── Name prompt (first-time or missing name) ─────────────────────────────────
-  if (needsName) {
-    return <NamePrompt user={user} onComplete={() => setNeedsName(false)} />;
-  }
-
+export default function AuthGate({ children }) {
+  const { user, wrongDomain } = useAuth();
+  if (user === undefined) return <LoadingScreen />;
+  if (!user) return <LoginScreen wrongDomain={wrongDomain} />;
   return children;
 }

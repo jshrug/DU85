@@ -5,6 +5,7 @@ import { Routes, Route, Navigate, NavLink, useNavigate, useLocation } from "reac
 import SplashScreen from "./components/SplashScreen.jsx";
 import { supabase, COHORT_ID, getOrCreateUserId } from "./lib/supabase.js";
 import { DEEP_DIVE } from "./data/countryDeepDive.js";
+import { useAuth } from "./lib/AuthContext.jsx";
 
 const TRIP_DATE = import.meta.env.VITE_TRIP_DATE || null;
 
@@ -678,6 +679,7 @@ function TopBar({ onOpenDrawer }) {
 function SideDrawer({ open, onClose }) {
   const navigate = useNavigate();
   const drawerRef = useRef(null);
+  const { user, signOut } = useAuth();
 
   function handleNav(to) {
     navigate(to);
@@ -806,13 +808,28 @@ function SideDrawer({ open, onClose }) {
         </nav>
 
         <div className="px-5 py-5 border-t border-white/10">
-          <div className="grid grid-cols-3 gap-2">
-            <MiniStat label="Unread" value="3" />
-            <MiniStat label="Votes" value="2" />
-            <MiniStat label="RSVPs" value="31" />
-          </div>
-          <p className="mt-4 text-xs uppercase tracking-[0.2em] text-white/35">
-            Destinations TBD · Cohort OS
+          {user && (
+            <div className="mb-4 flex items-center gap-3">
+              <div
+                className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-black shrink-0"
+                style={{ background: `linear-gradient(135deg, ${COLORS.champagne}, ${COLORS.ember})`, color: COLORS.midnight }}
+              >
+                {(user.email?.[0] || "?").toUpperCase()}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-xs font-bold truncate text-white/80">{user.email}</div>
+                <button
+                  onClick={() => { signOut(); onClose(); }}
+                  className="text-[10px] uppercase tracking-widest mt-0.5"
+                  style={{ color: `${COLORS.champagne}80` }}
+                >
+                  Sign out
+                </button>
+              </div>
+            </div>
+          )}
+          <p className="text-xs uppercase tracking-[0.2em] text-white/35">
+            Cohort OS · Private Portal
           </p>
         </div>
       </div>
@@ -1972,7 +1989,7 @@ function DestinationChamber({
             labelsData={activeCountry && !isMobile ? [activeCountry] : []}
             labelLat={(d) => d.lat}
             labelLng={(d) => d.lng}
-            labelText={(d) => `${countryIcon(d)} ${d.name}`}
+            labelText={(d) => d.name}
             labelSize={1.25}
             labelDotRadius={0.28}
             labelColor={() => COLORS.champagneLight}
