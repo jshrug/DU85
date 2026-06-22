@@ -663,10 +663,6 @@ function buildCompanionOptions(anchorName) {
   return names.map(getCountryByName).filter(Boolean);
 }
 
-function getSelectedVote(votes) {
-  return Object.keys(votes || {})[0] || null;
-}
-
 function getTopCountries(options, votes, count = 2) {
   const voteNames = Object.keys(votes || {});
 
@@ -908,17 +904,6 @@ function SideDrawer({ open, onClose }) {
         </div>
       </div>
     </>
-  );
-}
-
-function MiniStat({ label, value }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-3 text-center">
-      <div className="text-lg font-black" style={{ color: COLORS.champagne }}>
-        {value}
-      </div>
-      <div className="text-[10px] uppercase tracking-wide text-white/38">{label}</div>
-    </div>
   );
 }
 
