@@ -11,15 +11,22 @@ COHORT CONTEXT:
 - Flying from Denver (DEN)
 - Budget: roughly $3,500–$7,000 per person all-in, depending on destination
 - Travel window: late 2026 or early 2027
-- Format: anchor city/country (primary, 7–10 days) + optional companion destination (3–4 days)
+- Format: City A (primary, 7–10 days) + City B add-on (3–4 days)
 - Goals: business and company visits, cultural immersion, cohort bonding, memorable shared experiences
 - Mix of backgrounds: finance, strategy, marketing, operations, entrepreneurship
 
-ANCHOR OPTIONS (primary destination):
-Japan, Spain, South Korea, Germany, Italy, Netherlands, France, United Kingdom, Singapore, Australia
+CITY A OPTIONS (primary anchor — 7–10 days):
+Santiago (Chile), Seoul (South Korea), Singapore, Istanbul (Turkey), Lisbon (Portugal), Cape Town (South Africa), Nairobi (Kenya), Kigali (Rwanda)
 
-COMPANION OPTIONS (secondary add-on):
-Portugal, Morocco, Taiwan, Thailand, Vietnam, Malaysia, Indonesia, Philippines, Ireland, Greece, Croatia, Switzerland, Austria, Czech Republic, Poland, Denmark, Belgium, New Zealand
+CITY B OPTIONS (secondary add-on — 3–4 days, dependent on City A):
+- Santiago → Buenos Aires, Panama City, Medellín, Lima
+- Seoul → Ulaanbaatar (Mongolia)
+- Singapore → Bangkok, Kuala Lumpur, Ho Chi Minh City, Hanoi, Delhi, Bangalore, Mumbai
+- Istanbul → Nairobi, Budapest, Belgrade, Tunis, Athens, Warsaw
+- Lisbon → Casablanca, Dakar
+- Cape Town → Nairobi, Windhoek, Lusaka, Maputo, Gaborone
+- Nairobi → Mumbai, Istanbul, Kigali, Cape Town
+- Kigali → Kampala, Nairobi
 
 PORTER'S STYLE:
 - Specific, not generic: name real hotels, restaurants, neighborhoods, companies, transit lines
