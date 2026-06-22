@@ -25,7 +25,7 @@ function Corner({ pos }) {
 function LoginScreen() {
   const { sendMagicLink } = useAuth();
   const [email, setEmail] = useState("");
-  const [status, setStatus] = useState("idle"); // idle | sending | sent | error
+  const [status, setStatus] = useState("idle");
   const [errorMsg, setErrorMsg] = useState("");
 
   async function handleSubmit(e) {
@@ -107,7 +107,7 @@ function LoginScreen() {
                   type="email"
                   value={email}
                   onChange={(e) => { setEmail(e.target.value); setStatus("idle"); setErrorMsg(""); }}
-                  placeholder="yourname@du.edu"
+                  placeholder="your@email.com"
                   autoComplete="email"
                   autoFocus
                   required
@@ -137,7 +137,7 @@ function LoginScreen() {
               </button>
 
               <p className="mt-4 text-center text-xs" style={{ color: "rgba(255,255,255,0.28)" }}>
-                @du.edu addresses only
+                Cohort 85 · Private access
               </p>
             </form>
           )}

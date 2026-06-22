@@ -3,18 +3,13 @@ import { supabase } from "./supabase.js";
 
 const AuthContext = createContext(null);
 
-const ALLOWED_DOMAIN = (import.meta.env.VITE_ALLOWED_EMAIL_DOMAIN || "du.edu").toLowerCase();
-
 function checkUser(session) {
-  if (!session) return { user: null, wrongDomain: false };
-  const email = (session.user.email || "").toLowerCase();
-  if (!email.endsWith("@" + ALLOWED_DOMAIN)) return { user: null, wrongDomain: true };
-  return { user: session.user, wrongDomain: false };
+  if (!session) return { user: null };
+  return { user: session.user };
 }
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(undefined); // undefined = still loading
-  const [wrongDomain, setWrongDomain] = useState(false);
 
   useEffect(() => {
     if (!supabase) {
@@ -25,17 +20,11 @@ export function AuthProvider({ children }) {
     // Subscribe FIRST — getSession() after, or the SIGNED_IN event from a
     // magic-link redirect fires before the listener is attached and gets lost.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
-      const result = checkUser(session);
-      if (result.wrongDomain) supabase.auth.signOut();
-      setWrongDomain(result.wrongDomain);
-      setUser(result.user);
+      setUser(checkUser(session).user);
     });
 
     supabase.auth.getSession().then(({ data: { session } }) => {
-      const result = checkUser(session);
-      if (result.wrongDomain) supabase.auth.signOut();
-      setWrongDomain(result.wrongDomain);
-      setUser(result.user);
+      setUser(checkUser(session).user);
     });
 
     return () => subscription.unsubscribe();
@@ -43,12 +32,8 @@ export function AuthProvider({ children }) {
 
   function sendMagicLink(email) {
     if (!supabase) return Promise.reject(new Error("Supabase not configured."));
-    const clean = email.trim().toLowerCase();
-    if (!clean.endsWith("@" + ALLOWED_DOMAIN)) {
-      return Promise.reject(new Error(`Only @${ALLOWED_DOMAIN} addresses are allowed.`));
-    }
     return supabase.auth.signInWithOtp({
-      email: clean,
+      email: email.trim().toLowerCase(),
       options: { emailRedirectTo: window.location.origin },
     });
   }
@@ -58,7 +43,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, wrongDomain, sendMagicLink, signOut }}>
+    <AuthContext.Provider value={{ user, sendMagicLink, signOut }}>
       {children}
     </AuthContext.Provider>
   );
