@@ -52,7 +52,11 @@ function Panel({ children, centered = false }) {
       <div className="h-full flex flex-col md:items-center md:justify-center">
         <div
           className="flex flex-col h-full w-full md:h-auto md:max-h-[90vh] md:w-[390px] md:rounded-[2.5rem] md:overflow-hidden md:shadow-[0_40px_120px_rgba(0,0,0,0.70)] md:border md:border-white/10"
-          style={centered ? { background: BG } : undefined}
+          style={{
+            ...(centered ? { background: BG } : {}),
+            paddingTop: "env(safe-area-inset-top)",
+            paddingBottom: "env(safe-area-inset-bottom)",
+          }}
         >
           {children}
         </div>
