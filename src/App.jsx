@@ -2754,6 +2754,29 @@ function FloatingIntelPanel({
           </div>
         </div>
 
+        {(mission.mode === "anchor-longlist" || mission.mode === "anchor-final") && CITY_B_MAP[country.name]?.length > 0 && (
+          <div className="mt-4 rounded-3xl border border-white/10 bg-black/30 p-4">
+            <p className="text-xs uppercase tracking-[0.18em] font-black" style={{ color: COLORS.champagne }}>
+              City B options
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {CITY_B_MAP[country.name].map((name) => (
+                <span
+                  key={name}
+                  className="rounded-full border px-3 py-1 text-xs font-bold"
+                  style={{
+                    background: "rgba(255,255,255,0.05)",
+                    borderColor: "rgba(255,255,255,0.12)",
+                    color: "rgba(255,255,255,0.62)",
+                  }}
+                >
+                  {name}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
         {routeComplete && (
           <div className="mt-3 rounded-3xl border p-4" style={{ borderColor: "rgba(243,213,138,0.24)", background: "rgba(243,213,138,0.08)" }}>
             <p className="text-[10px] uppercase tracking-[0.24em] font-black" style={{ color: COLORS.champagneLight }}>
@@ -2927,6 +2950,29 @@ function DeepDivePanel({ country, mission, selected, onClose, onVote }) {
               <div>
                 <div className="text-[9px] uppercase tracking-[0.2em] font-black mb-1" style={{ color: "rgba(243,213,138,0.55)" }}>Currency & payments</div>
                 <p className="text-xs text-white/70 leading-5">{data.currency}</p>
+              </div>
+            </div>
+          )}
+
+          {(mission.mode === "anchor-longlist" || mission.mode === "anchor-final") && CITY_B_MAP[country.name]?.length > 0 && (
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.26em] font-black mb-3" style={{ color: "#FFD880" }}>
+                City B add-on options
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {CITY_B_MAP[country.name].map((name) => (
+                  <span
+                    key={name}
+                    className="rounded-full border px-3 py-1.5 text-xs font-bold"
+                    style={{
+                      background: "rgba(255,255,255,0.05)",
+                      borderColor: "rgba(255,255,255,0.12)",
+                      color: "rgba(255,255,255,0.65)",
+                    }}
+                  >
+                    {name}
+                  </span>
+                ))}
               </div>
             </div>
           )}
