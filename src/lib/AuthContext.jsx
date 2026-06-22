@@ -42,10 +42,10 @@ export function AuthProvider({ children }) {
   function signIn() {
     if (!supabase) return;
     supabase.auth.signInWithOAuth({
-      provider: "google",
+      provider: "azure",
       options: {
         redirectTo: window.location.origin,
-        queryParams: { hd: ALLOWED_DOMAIN },
+        scopes: "email",
       },
     });
   }

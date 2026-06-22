@@ -41,10 +41,12 @@ const DRAWER_NAV = [
 ];
 
 const SAMPLE_PROMPTS = [
-  "What should I do with 3 free hours near the hotel?",
-  "Find dinner for 6 that feels local but not chaotic.",
-  "What should I know before tomorrow’s company visit?",
-  "Give me a quick etiquette briefing for the city.",
+  "Which anchor + companion pairing would you recommend for Global 85?",
+  "Compare Japan and South Korea for a DU MBA business immersion.",
+  "What’s the best 10-day itinerary if we pick Spain as anchor?",
+  "Give me the top 3 company visit ideas for a tech-focused cohort.",
+  "What should we know about visas and logistics before we decide?",
+  "What’s the honest case against Japan given the cost and flight time?",
 ];
 
 const DESTINATION_OPTIONS = [
@@ -1148,37 +1150,86 @@ function SmallEventCard({ event }) {
 }
 
 function PorterPage() {
+  const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
   const [messages, setMessages] = useState([
     {
       role: "assistant",
-      text:
-        "Welcome to Porter. I’m your private Global 85 concierge. For now this is a visual demo, but eventually I’ll know the itinerary, city guide, Explore list, announcements, votes, hotels, and cohort details.",
+      text: "I’m Porter — Global 85’s private concierge. Ask me anything about the destination options, trip logistics, company visits, cultural prep, or how to structure the itinerary. I know the countries, I know DU Daniels, and I have opinions.",
     },
   ]);
   const [input, setInput] = useState("");
+  const [streaming, setStreaming] = useState(false);
+  const [streamingText, setStreamingText] = useState("");
 
-  function sendMessage(text = input) {
-    const clean = text.trim();
-    if (!clean) return;
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, streamingText]);
 
-    setMessages((prev) => [
-      ...prev,
-      { role: "user", text: clean },
-      {
-        role: "assistant",
-        text:
-          "Demo answer: I’d check the itinerary, votes, RSVP counts, your location, cohort recommendations, and city guide before answering. In the real version, I’d give you a practical plan with timing, transportation, cost, and why it fits the group.",
-      },
-    ]);
+  async function sendMessage(text = input) {
+    const clean = (typeof text === "string" ? text : input).trim();
+    if (!clean || streaming) return;
+
+    const next = [...messages, { role: "user", text: clean }];
+    setMessages(next);
     setInput("");
+    setStreaming(true);
+    setStreamingText("");
+
+    try {
+      const res = await fetch("/api/porter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: next.map((m) => ({ role: m.role, text: m.text })),
+        }),
+      });
+
+      if (!res.ok || !res.body) throw new Error("Porter unavailable");
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let accumulated = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const raw = decoder.decode(value, { stream: true });
+        for (const line of raw.split("\n")) {
+          if (!line.startsWith("data: ")) continue;
+          const payload = line.slice(6).trim();
+          if (payload === "[DONE]") break;
+          try {
+            const parsed = JSON.parse(payload);
+            if (parsed.text) {
+              accumulated += parsed.text;
+              setStreamingText(accumulated);
+            }
+            if (parsed.error) throw new Error(parsed.error);
+          } catch {}
+        }
+      }
+
+      setMessages((prev) => [...prev, { role: "assistant", text: accumulated || "No response — try again." }]);
+    } catch {
+      setMessages((prev) => [...prev, { role: "assistant", text: "Porter hit a snag. Check that ANTHROPIC_API_KEY is set in Vercel env vars, then try again." }]);
+    } finally {
+      setStreaming(false);
+      setStreamingText("");
+      inputRef.current?.focus();
+    }
   }
 
+  const allDisplayMessages = streaming
+    ? [...messages, { role: "assistant", text: streamingText, streaming: true }]
+    : messages;
+
   return (
-    <main className="px-5 py-5">
+    <main className="px-5 py-5 flex flex-col gap-5">
       <section className="rounded-[2rem] p-5 border border-white/10 bg-white/[0.06] backdrop-blur">
         <div className="flex items-center gap-3">
           <div
-            className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl"
+            className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0"
             style={{ background: `linear-gradient(135deg, ${COLORS.champagne}, ${COLORS.ember}, ${COLORS.roseSmoke})` }}
           >
             🛎️
@@ -1193,16 +1244,17 @@ function PorterPage() {
           </div>
         </div>
 
-        <p className="text-sm text-white/60 mt-4 leading-6">
-          Ask about free time, food, culture, events, voting results, transportation, company visits, or what the group is doing next.
+        <p className="text-sm text-white/55 mt-3 leading-6">
+          Destinations · logistics · company visits · culture · itinerary · food
         </p>
 
-        <div className="grid gap-2 mt-5">
+        <div className="grid sm:grid-cols-2 gap-2 mt-4">
           {SAMPLE_PROMPTS.map((prompt) => (
             <button
               key={prompt}
               onClick={() => sendMessage(prompt)}
-              className="text-left rounded-2xl px-4 py-3 border border-white/10 bg-black/20 text-sm text-white/80 hover:bg-white/10 transition"
+              disabled={streaming}
+              className="text-left rounded-2xl px-4 py-3 border border-white/10 bg-black/20 text-sm text-white/75 hover:bg-white/10 hover:text-white transition disabled:opacity-40"
             >
               {prompt}
             </button>
@@ -1210,51 +1262,51 @@ function PorterPage() {
         </div>
       </section>
 
-      <section className="mt-5 rounded-[2rem] border border-white/10 bg-black/20 overflow-hidden">
-        <div className="p-4 max-h-[420px] overflow-y-auto space-y-3">
-          {messages.map((message, index) => (
-            <div key={`${message.role}-${index}`} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+      <section className="rounded-[2rem] border border-white/10 bg-black/20 overflow-hidden flex flex-col" style={{ minHeight: 340 }}>
+        <div className="flex-1 p-4 overflow-y-auto space-y-3 max-h-[520px] chamber-scrollbar">
+          {allDisplayMessages.map((msg, i) => (
+            <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+              {msg.role === "assistant" && (
+                <div
+                  className="w-7 h-7 rounded-xl flex items-center justify-center text-sm shrink-0 mr-2 mt-0.5"
+                  style={{ background: `linear-gradient(135deg, ${COLORS.champagne}, ${COLORS.ember})` }}
+                >
+                  🛎️
+                </div>
+              )}
               <div
-                className="rounded-3xl px-4 py-3 max-w-[85%] text-sm leading-6"
+                className="rounded-3xl px-4 py-3 max-w-[82%] text-sm leading-6"
                 style={
-                  message.role === "user"
-                    ? {
-                        background: `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne})`,
-                        color: "#17060b",
-                        fontWeight: 700,
-                      }
-                    : {
-                        background: "rgba(255,255,255,0.10)",
-                        color: "rgba(255,255,255,0.8)",
-                        border: "1px solid rgba(255,255,255,0.10)",
-                      }
+                  msg.role === "user"
+                    ? { background: `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne})`, color: "#17060b", fontWeight: 700 }
+                    : { background: "rgba(255,255,255,0.09)", color: "rgba(255,255,255,0.82)", border: "1px solid rgba(255,255,255,0.09)" }
                 }
               >
-                {message.text}
+                {msg.text || (msg.streaming && <span className="animate-pulse opacity-60">▌</span>)}
+                {msg.streaming && msg.text && <span className="animate-pulse opacity-60">▌</span>}
               </div>
             </div>
           ))}
+          <div ref={messagesEndRef} />
         </div>
 
         <div className="p-3 border-t border-white/10 flex gap-2">
           <input
+            ref={inputRef}
             value={input}
-            onChange={(event) => setInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") sendMessage();
-            }}
-            placeholder="Ask Porter..."
-            className="flex-1 rounded-2xl px-4 py-3 bg-white/10 border border-white/10 text-white placeholder:text-white/35 outline-none"
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+            placeholder={streaming ? "Porter is thinking…" : "Ask Porter anything…"}
+            disabled={streaming}
+            className="flex-1 rounded-2xl px-4 py-3 bg-white/10 border border-white/10 text-white placeholder:text-white/30 outline-none disabled:opacity-50 text-sm"
           />
           <button
             onClick={() => sendMessage()}
-            className="rounded-2xl px-5 py-3 font-black"
-            style={{
-              background: `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne}, ${COLORS.ember})`,
-              color: "#16060a",
-            }}
+            disabled={streaming || !input.trim()}
+            className="rounded-2xl px-5 py-3 font-black text-sm shrink-0 disabled:opacity-40 transition"
+            style={{ background: `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne}, ${COLORS.ember})`, color: "#16060a" }}
           >
-            Send
+            {streaming ? "…" : "Send"}
           </button>
         </div>
       </section>
@@ -2764,11 +2816,22 @@ function DeepDivePanel({ country, mission, selected, onClose, onVote }) {
         </div>
 
         <div className="px-5 pb-8 space-y-6 pt-5">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <DeepDiveStat icon="✈️" label="Flight from Denver" value={data.flightFromDenver || "—"} />
             <DeepDiveStat icon="💰" label="Estimated cost" value={data.costRange || "—"} />
             <DeepDiveStat icon="🌤️" label="Best window" value={data.bestWindow || "—"} />
+            <DeepDiveStat icon="🛂" label="Visa (US passport)" value={data.visa || "Check travel.state.gov"} />
           </div>
+
+          {data.currency && (
+            <div className="rounded-2xl px-4 py-3 border flex items-start gap-3" style={{ background: "rgba(0,0,0,0.22)", borderColor: "rgba(196,150,42,0.14)" }}>
+              <span className="text-lg shrink-0">💵</span>
+              <div>
+                <div className="text-[9px] uppercase tracking-[0.2em] font-black mb-1" style={{ color: "rgba(243,213,138,0.55)" }}>Currency & payments</div>
+                <p className="text-xs text-white/70 leading-5">{data.currency}</p>
+              </div>
+            </div>
+          )}
 
           {data.experiences?.length > 0 && (
             <div>
@@ -2780,10 +2843,7 @@ function DeepDivePanel({ country, mission, selected, onClose, onVote }) {
                   <div
                     key={i}
                     className="flex items-start gap-3 rounded-2xl px-4 py-3 border"
-                    style={{
-                      background: "rgba(196,150,42,0.05)",
-                      borderColor: "rgba(196,150,42,0.14)",
-                    }}
+                    style={{ background: "rgba(196,150,42,0.05)", borderColor: "rgba(196,150,42,0.14)" }}
                   >
                     <span className="shrink-0 text-sm" style={{ color: COLORS.gold }}>◆</span>
                     <span className="text-sm text-white/78 leading-5">{exp}</span>
@@ -2793,14 +2853,53 @@ function DeepDivePanel({ country, mission, selected, onClose, onVote }) {
             </div>
           )}
 
+          {data.hotels?.length > 0 && (
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.26em] font-black mb-3" style={{ color: "#FFD880" }}>
+                Where to stay
+              </div>
+              <div className="space-y-2">
+                {data.hotels.map((h, i) => (
+                  <div key={i} className="rounded-2xl px-4 py-3 border" style={{ background: "rgba(0,0,0,0.22)", borderColor: "rgba(255,255,255,0.08)" }}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="text-sm font-black text-white/90">{h.name}</span>
+                      <span
+                        className="rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider"
+                        style={{
+                          background: h.tier === "Luxury" ? "rgba(196,150,42,0.18)" : h.tier === "Mid" ? "rgba(255,255,255,0.10)" : "rgba(255,255,255,0.06)",
+                          color: h.tier === "Luxury" ? COLORS.champagne : "rgba(255,255,255,0.5)",
+                          border: `1px solid ${h.tier === "Luxury" ? "rgba(196,150,42,0.28)" : "rgba(255,255,255,0.10)"}`,
+                        }}
+                      >
+                        {h.tier}
+                      </span>
+                    </div>
+                    <p className="text-xs text-white/55 leading-5">{h.note}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {data.restaurants?.length > 0 && (
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.26em] font-black mb-3" style={{ color: "#FFD880" }}>
+                Where to eat
+              </div>
+              <div className="space-y-2">
+                {data.restaurants.map((r, i) => (
+                  <div key={i} className="rounded-2xl px-4 py-3 border" style={{ background: "rgba(0,0,0,0.22)", borderColor: "rgba(255,255,255,0.08)" }}>
+                    <div className="text-sm font-black text-white/90 mb-0.5">{r.name}</div>
+                    <div className="text-[10px] uppercase tracking-wider font-bold mb-1" style={{ color: `${COLORS.champagne}88` }}>{r.dish}</div>
+                    <p className="text-xs text-white/55 leading-5">{r.note}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {data.culturalNotes && (
-            <div
-              className="rounded-2xl px-4 py-4 border"
-              style={{
-                background: "rgba(255,232,163,0.04)",
-                borderColor: "rgba(243,213,138,0.16)",
-              }}
-            >
+            <div className="rounded-2xl px-4 py-4 border" style={{ background: "rgba(255,232,163,0.04)", borderColor: "rgba(243,213,138,0.16)" }}>
               <div className="text-[10px] uppercase tracking-[0.26em] font-black mb-2" style={{ color: "#FFD880" }}>
                 Cultural notes
               </div>
@@ -2809,13 +2908,7 @@ function DeepDivePanel({ country, mission, selected, onClose, onVote }) {
           )}
 
           {data.porterVibe && (
-            <div
-              className="rounded-2xl px-4 py-4 border"
-              style={{
-                background: "rgba(196,150,42,0.06)",
-                borderColor: "rgba(196,150,42,0.20)",
-              }}
-            >
+            <div className="rounded-2xl px-4 py-4 border" style={{ background: "rgba(196,150,42,0.06)", borderColor: "rgba(196,150,42,0.20)" }}>
               <div className="text-[10px] uppercase tracking-[0.26em] font-black mb-2" style={{ color: "#FFD880" }}>
                 Porter read
               </div>
