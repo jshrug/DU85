@@ -39,14 +39,15 @@ export function AuthProvider({ children }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  function signIn() {
-    if (!supabase) return;
-    supabase.auth.signInWithOAuth({
-      provider: "azure",
-      options: {
-        redirectTo: window.location.origin,
-        scopes: "email",
-      },
+  function sendMagicLink(email) {
+    if (!supabase) return Promise.reject(new Error("Supabase not configured."));
+    const clean = email.trim().toLowerCase();
+    if (!clean.endsWith("@" + ALLOWED_DOMAIN)) {
+      return Promise.reject(new Error(`Only @${ALLOWED_DOMAIN} addresses are allowed.`));
+    }
+    return supabase.auth.signInWithOtp({
+      email: clean,
+      options: { emailRedirectTo: window.location.origin },
     });
   }
 
@@ -55,7 +56,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, wrongDomain, signIn, signOut }}>
+    <AuthContext.Provider value={{ user, wrongDomain, sendMagicLink, signOut }}>
       {children}
     </AuthContext.Provider>
   );

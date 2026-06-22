@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useAuth } from "../lib/AuthContext.jsx";
 
 const C = {
@@ -8,16 +9,6 @@ const C = {
   crimson: "#BA0C2F",
 };
 
-function MicrosoftIcon() {
-  return (
-    <svg width="20" height="20" viewBox="0 0 21 21" aria-hidden="true" style={{ flexShrink: 0 }}>
-      <rect x="1" y="1" width="9" height="9" fill="#f25022" />
-      <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
-      <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
-      <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
-    </svg>
-  );
-}
 
 function Corner({ pos }) {
   const s = {
@@ -31,8 +22,25 @@ function Corner({ pos }) {
   );
 }
 
-function LoginScreen({ wrongDomain }) {
-  const { signIn } = useAuth();
+function LoginScreen() {
+  const { sendMagicLink } = useAuth();
+  const [email, setEmail] = useState("");
+  const [status, setStatus] = useState("idle"); // idle | sending | sent | error
+  const [errorMsg, setErrorMsg] = useState("");
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setStatus("sending");
+    setErrorMsg("");
+    try {
+      await sendMagicLink(email);
+      setStatus("sent");
+    } catch (err) {
+      setErrorMsg(err.message || "Something went wrong. Try again.");
+      setStatus("error");
+    }
+  }
+
   return (
     <div
       className="min-h-screen flex flex-col items-center justify-center px-6"
@@ -72,41 +80,67 @@ function LoginScreen({ wrongDomain }) {
         >
           <Corner pos="tl" /><Corner pos="tr" /><Corner pos="bl" /><Corner pos="br" />
 
-          {wrongDomain && (
-            <div
-              className="mb-5 rounded-2xl px-4 py-3 text-sm text-center"
-              style={{
-                background: `${C.crimson}33`,
-                border: `1px solid ${C.crimson}66`,
-                color: "#fca5a5",
-              }}
-            >
-              That account isn't on the cohort list.
-              <br />
-              Use your <strong>@du.edu</strong> Microsoft account.
+          {status === "sent" ? (
+            <div className="text-center py-4">
+              <div className="text-4xl mb-4">📬</div>
+              <div className="font-black text-white text-lg mb-2">Check your inbox</div>
+              <p className="text-sm" style={{ color: "rgba(255,255,255,0.55)" }}>
+                We sent a sign-in link to <span style={{ color: C.champagne }}>{email}</span>.
+                Click it to access the portal — no password needed.
+              </p>
+              <button
+                onClick={() => { setStatus("idle"); setEmail(""); }}
+                className="mt-6 text-xs underline"
+                style={{ color: "rgba(255,255,255,0.35)" }}
+              >
+                Use a different email
+              </button>
             </div>
+          ) : (
+            <form onSubmit={handleSubmit}>
+              <p className="text-sm mb-5" style={{ color: "rgba(255,255,255,0.60)" }}>
+                Enter your DU email and we'll send you a one-click sign-in link. No password.
+              </p>
+
+              <div className="mb-3">
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => { setEmail(e.target.value); setStatus("idle"); setErrorMsg(""); }}
+                  placeholder="yourname@du.edu"
+                  autoComplete="email"
+                  autoFocus
+                  required
+                  className="w-full rounded-2xl px-4 py-3 text-sm outline-none"
+                  style={{
+                    background: "rgba(255,255,255,0.08)",
+                    border: `1px solid ${status === "error" ? `${C.crimson}88` : "rgba(255,255,255,0.14)"}`,
+                    color: "#fff",
+                  }}
+                />
+              </div>
+
+              {status === "error" && (
+                <p className="text-xs mb-3 px-1" style={{ color: "#fca5a5" }}>{errorMsg}</p>
+              )}
+
+              <button
+                type="submit"
+                disabled={status === "sending" || !email.trim()}
+                className="w-full rounded-2xl px-5 py-4 font-black text-sm transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50 disabled:scale-100"
+                style={{
+                  background: `linear-gradient(135deg, ${C.champagne}, ${C.ember})`,
+                  color: "#16060a",
+                }}
+              >
+                {status === "sending" ? "Sending…" : "Send sign-in link →"}
+              </button>
+
+              <p className="mt-4 text-center text-xs" style={{ color: "rgba(255,255,255,0.28)" }}>
+                @du.edu addresses only
+              </p>
+            </form>
           )}
-
-          <p className="text-sm mb-6 text-center" style={{ color: "rgba(255,255,255,0.65)" }}>
-            Sign in with your University of Denver Google account to access the portal.
-          </p>
-
-          <button
-            onClick={signIn}
-            className="w-full flex items-center justify-center gap-3 rounded-2xl px-5 py-4 font-bold text-sm transition-all hover:scale-[1.02] active:scale-[0.98]"
-            style={{
-              background: "#fff",
-              color: "#111",
-              boxShadow: "0 4px 24px rgba(0,0,0,0.4)",
-            }}
-          >
-            <MicrosoftIcon />
-            Sign in with University of Denver
-          </button>
-
-          <p className="mt-5 text-center text-xs" style={{ color: "rgba(255,255,255,0.28)" }}>
-            @du.edu accounts only · Uses DU's Microsoft login
-          </p>
         </div>
       </div>
     </div>
