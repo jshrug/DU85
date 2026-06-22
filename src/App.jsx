@@ -1224,7 +1224,7 @@ function PorterPage() {
   const [messages, setMessages] = useState([
     {
       role: "assistant",
-      text: "I’m Porter — Global 85’s private concierge. Ask me anything about the destination options, trip logistics, company visits, cultural prep, or how to structure the itinerary. I know the countries, I know DU Daniels, and I have opinions.",
+      text: "I’m Porter — Global 85’s private concierge. Before I start throwing city picks at you, tell me: what do you actually want out of this trip? What’s your track, what industries excite you, and what would make this feel like a once-in-a-career experience for you specifically? The more you share, the sharper I can make the picks.",
     },
   ]);
   const [input, setInput] = useState("");
