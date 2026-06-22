@@ -22,14 +22,16 @@ export function AuthProvider({ children }) {
       return;
     }
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // Subscribe FIRST — getSession() after, or the SIGNED_IN event from a
+    // magic-link redirect fires before the listener is attached and gets lost.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
       const result = checkUser(session);
       if (result.wrongDomain) supabase.auth.signOut();
       setWrongDomain(result.wrongDomain);
       setUser(result.user);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
       const result = checkUser(session);
       if (result.wrongDomain) supabase.auth.signOut();
       setWrongDomain(result.wrongDomain);
