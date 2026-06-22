@@ -598,66 +598,33 @@ const CITY_B_MAP = {
 
 const ANCHOR_COUNTRIES = DESTINATION_OPTIONS;
 
-const INITIAL_EVENTS = [
+const COHORT_EVENTS = [
   {
-    id: "official-1",
-    source: "Official Itinerary",
-    title: "Company Visit",
-    time: "9:00 AM",
-    date: "Today",
-    detail: "Meet in the lobby at 8:20. Business casual.",
+    id: "cohort-1",
+    source: "Class Session",
+    title: "Countries Announced + Team Assignments",
+    date: "Jun 26",
+    fullDate: new Date("2026-06-26"),
+    detail: "Cohort finds out which countries are on the list and gets assigned to presentation teams.",
     badge: "Required",
-    going: 43,
-    maybe: 2,
-    notGoing: 0,
-    thread: ["Bring notebooks?", "Professor said business casual.", "Leaving lobby at 8:20 sharp."],
   },
   {
-    id: "official-2",
-    source: "Official Itinerary",
-    title: "Cultural Tour",
-    time: "1:30 PM",
-    date: "Today",
-    detail: "Bring water, comfortable shoes, and your passport copy.",
-    badge: "Group",
-    going: 39,
-    maybe: 5,
-    notGoing: 1,
-    thread: ["Wear good shoes.", "Anyone bringing sunscreen?", "Porter says it may be humid."],
+    id: "cohort-2",
+    source: "Assignment Due",
+    title: "Presentation Briefing Due",
+    date: "Jul 8",
+    fullDate: new Date("2026-07-08"),
+    detail: "Each presentation team submits their briefing document to Joseph before class.",
+    badge: "Due",
   },
   {
-    id: "vote-1",
-    source: "Created from Vote",
-    title: "Local Market Dinner",
-    time: "7:30 PM",
-    date: "Tonight",
-    detail: "Winning option from the dinner vote. Meet in the hotel lobby at 7:00.",
-    badge: "Optional",
-    going: 18,
-    maybe: 8,
-    notGoing: 3,
-    thread: ["Should we split into smaller groups?", "I’m down if we leave by 7.", "Porter says 14 minutes by cab."],
-  },
-];
-
-const RECS = [
-  {
-    title: "Best quick food nearby",
-    body: "Casual, local-feeling, easy for groups, and good for first-timers.",
-    tag: "Food",
-    icon: "🍜",
-  },
-  {
-    title: "Before the business visit",
-    body: "Quick briefing on company background, etiquette, and smart questions.",
-    tag: "Prep",
-    icon: "🏢",
-  },
-  {
-    title: "Destination chamber",
-    body: "Open the full-screen Porter chamber and select the trip countries.",
-    tag: "Votes",
-    icon: "🗳️",
+    id: "cohort-3",
+    source: "Class Session",
+    title: "Presentations + Destination Vote",
+    date: "Jul 11",
+    fullDate: new Date("2026-07-11"),
+    detail: "In-class presentations followed by both rounds of voting for the destination city.",
+    badge: "Required",
   },
 ];
 
@@ -1089,6 +1056,12 @@ function HomePage({ onAsk }) {
     return () => clearTimeout(t);
   }, [timeLeft]);
 
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const nextEvent = COHORT_EVENTS.find((e) => e.fullDate >= today);
+  const daysToNext = nextEvent ? Math.ceil((nextEvent.fullDate - today) / 86400000) : null;
+  const voteLabel = routeLocked ? "Route locked" : "Voting open";
+
   return (
     <main className="py-5">
       {routeLocked && TRIP_DATE && (
@@ -1127,94 +1100,80 @@ function HomePage({ onAsk }) {
       </div>
 
       <div className="px-5 mt-5">
-      <section
-        className="rounded-[2rem] p-5 overflow-hidden border border-white/10 shadow-2xl relative"
-        style={{
-          background: `linear-gradient(135deg, ${COLORS.roseSmoke} 0%, ${COLORS.wine} 58%, ${COLORS.midnight} 100%)`,
-        }}
-      >
-        <div
-          className="absolute inset-0 opacity-40"
+        <section
+          className="rounded-[2rem] p-5 overflow-hidden border border-white/10 shadow-2xl relative"
           style={{
-            background:
-              `radial-gradient(circle at 20% 15%, ${COLORS.champagne}80, transparent 20%), ` +
-              `radial-gradient(circle at 88% 38%, ${COLORS.ember}55, transparent 22%)`,
+            background: `linear-gradient(135deg, ${COLORS.roseSmoke} 0%, ${COLORS.wine} 58%, ${COLORS.midnight} 100%)`,
           }}
-        />
-
-        <div className="relative z-10">
+        >
           <div
-            className="inline-flex items-center gap-2 rounded-full px-3 py-1 border text-xs font-bold"
+            className="absolute inset-0 opacity-40"
             style={{
-              background: "rgba(0,0,0,0.25)",
-              borderColor: "rgba(243,213,138,0.22)",
-              color: COLORS.champagneLight,
+              background:
+                `radial-gradient(circle at 20% 15%, ${COLORS.champagne}80, transparent 20%), ` +
+                `radial-gradient(circle at 88% 38%, ${COLORS.ember}55, transparent 22%)`,
             }}
-          >
-            🛎️ Porter · private cohort concierge
-          </div>
+          />
 
-          <h1 className="mt-5 text-4xl font-black leading-tight" style={{ fontFamily: "Georgia, serif" }}>
-            A smarter command center for Global 85.
-          </h1>
-
-          <p className="mt-3 text-white/75 text-sm leading-6">
-            Porter, destination votes, trip decisions, RSVP events, chat, and everything the cohort needs while traveling.
-          </p>
-
-          <div className="grid grid-cols-2 gap-3 mt-5">
-            <button
-              onClick={onAsk}
-              className="rounded-2xl px-4 py-4 font-black text-left shadow-xl"
+          <div className="relative z-10">
+            <div
+              className="inline-flex items-center gap-2 rounded-full px-3 py-1 border text-xs font-bold"
               style={{
-                background: `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne}, ${COLORS.ember})`,
-                color: "#17060b",
+                background: "rgba(0,0,0,0.25)",
+                borderColor: "rgba(243,213,138,0.22)",
+                color: COLORS.champagneLight,
               }}
             >
-              <div className="text-xs uppercase tracking-[0.18em] opacity-70">Ask Porter</div>
-              <div className="text-base">Plan my free time</div>
-            </button>
-
-            <button
-              onClick={() => navigate("/votes")}
-              className="rounded-2xl px-4 py-4 font-black text-left shadow-xl border border-white/10 bg-black/25"
-            >
-              <div className="text-xs uppercase tracking-[0.18em] text-white/45">Class Vote</div>
-              <div className="text-base">Open chamber</div>
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <section className="mt-5 grid grid-cols-2 gap-3 md:grid-cols-4">
-        <FeatureTile icon="🗳️" label="Active Votes" value="2 live" />
-        <FeatureTile icon="📅" label="RSVP Needed" value="1 event" />
-        <FeatureTile icon="💬" label="Cohort Pulse" value="3 unread" />
-        <FeatureTile icon="🧳" label="Trip Mode" value="Active" />
-      </section>
-
-      <section className="mt-6">
-        <SectionTitle eyebrow="Recommended" title="Useful right now" />
-        <div className="grid gap-3 mt-3 md:grid-cols-3">
-          {RECS.map((rec) => (
-            <div key={rec.title} className="rounded-3xl p-4 border border-white/10 bg-white/[0.06]">
-              <div className="text-2xl">{rec.icon}</div>
-              <div className="text-[10px] uppercase tracking-[0.18em] font-bold mt-3" style={{ color: "rgba(243,213,138,0.72)" }}>
-                {rec.tag}
-              </div>
-              <h3 className="font-black mt-2">{rec.title}</h3>
-              <p className="text-sm text-white/55 mt-2 leading-6">{rec.body}</p>
+              🛎️ Porter · private cohort concierge
             </div>
-          ))}
-        </div>
-      </section>
 
-      <section className="mt-6 grid gap-3">
-        <SectionTitle eyebrow="Today" title="Your day at a glance" />
-        {INITIAL_EVENTS.slice(0, 3).map((event) => (
-          <SmallEventCard key={event.id} event={event} />
-        ))}
-      </section>
+            <h1 className="mt-5 text-4xl font-black leading-tight" style={{ fontFamily: "Georgia, serif" }}>
+              A smarter command center for Global 85.
+            </h1>
+
+            <p className="mt-3 text-white/75 text-sm leading-6">
+              Porter, destination votes, trip planning, and everything the cohort needs on the road.
+            </p>
+
+            <div className="grid grid-cols-2 gap-3 mt-5">
+              <button
+                onClick={onAsk}
+                className="rounded-2xl px-4 py-4 font-black text-left shadow-xl"
+                style={{
+                  background: `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne}, ${COLORS.ember})`,
+                  color: "#17060b",
+                }}
+              >
+                <div className="text-xs uppercase tracking-[0.18em] opacity-70">Ask Porter</div>
+                <div className="text-base">Get a recommendation</div>
+              </button>
+
+              <button
+                onClick={() => navigate("/votes")}
+                className="rounded-2xl px-4 py-4 font-black text-left shadow-xl border border-white/10 bg-black/25"
+              >
+                <div className="text-xs uppercase tracking-[0.18em] text-white/45">Destination Vote</div>
+                <div className="text-base">Open chamber</div>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-5 grid grid-cols-2 gap-3">
+          <FeatureTile icon="🗳️" label="Destination Vote" value={voteLabel} />
+          <FeatureTile
+            icon="📅"
+            label="Next Key Date"
+            value={daysToNext !== null ? (daysToNext === 0 ? "Today" : `${daysToNext}d`) : "—"}
+          />
+        </section>
+
+        <section className="mt-6 grid gap-3">
+          <SectionTitle eyebrow="Upcoming" title="Key dates" />
+          {COHORT_EVENTS.map((event) => (
+            <SmallEventCard key={event.id} event={event} today={today} />
+          ))}
+        </section>
       </div>
     </main>
   );
@@ -1232,38 +1191,36 @@ function FeatureTile({ icon, label, value }) {
   );
 }
 
-function SmallEventCard({ event }) {
+function SmallEventCard({ event, today }) {
+  const base = today || (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })();
+  const daysAway = event.fullDate ? Math.ceil((event.fullDate - base) / 86400000) : null;
+
   return (
     <div className="rounded-3xl p-4 border border-white/10 bg-white/[0.06] backdrop-blur">
       <div className="flex items-start gap-4">
         <div
-          className="rounded-2xl px-3 py-2 font-black text-sm min-w-[76px] text-center"
-          style={{
-            background: "rgba(243,213,138,0.12)",
-            color: COLORS.champagneLight,
-          }}
+          className="rounded-2xl px-3 py-2 font-black text-sm min-w-[60px] text-center leading-tight"
+          style={{ background: "rgba(243,213,138,0.12)", color: COLORS.champagneLight }}
         >
-          {event.time}
+          {event.date}
         </div>
         <div className="flex-1">
           <div className="text-[10px] uppercase tracking-[0.18em] text-white/35 font-bold">{event.source}</div>
-          <div className="flex items-center gap-2 mt-1">
+          <div className="flex items-center gap-2 mt-1 flex-wrap">
             <h3 className="font-black text-white">{event.title}</h3>
             <span
-              className="text-[10px] uppercase tracking-wide px-2 py-1 rounded-full border"
-              style={{
-                background: "rgba(198,90,46,0.14)",
-                color: COLORS.champagneLight,
-                borderColor: "rgba(243,213,138,0.18)",
-              }}
+              className="text-[10px] uppercase tracking-wide px-2 py-1 rounded-full border shrink-0"
+              style={{ background: "rgba(198,90,46,0.14)", color: COLORS.champagneLight, borderColor: "rgba(243,213,138,0.18)" }}
             >
               {event.badge}
             </span>
           </div>
-          <p className="text-sm text-white/55 mt-1">{event.detail}</p>
-          <p className="text-xs text-white/38 mt-2">
-            {event.going} Going · {event.maybe} Maybe
-          </p>
+          <p className="text-sm text-white/55 mt-1 leading-5">{event.detail}</p>
+          {daysAway !== null && (
+            <p className="text-xs mt-2 font-black" style={{ color: daysAway === 0 ? COLORS.champagneLight : "rgba(255,255,255,0.32)" }}>
+              {daysAway === 0 ? "Today" : daysAway > 0 ? `In ${daysAway} day${daysAway !== 1 ? "s" : ""}` : "Past"}
+            </p>
+          )}
         </div>
       </div>
     </div>
@@ -3668,85 +3625,52 @@ function MiniInfo({ label, value }) {
 }
 
 function EventsPage() {
-  const [events, setEvents] = useState(INITIAL_EVENTS);
-
-  function updateRsvp(eventId, nextStatus) {
-    setEvents((prev) =>
-      prev.map((event) => {
-        if (event.id !== eventId) return event;
-
-        const currentStatus = event.myStatus;
-        const updated = { ...event };
-
-        if (currentStatus === "going") updated.going -= 1;
-        if (currentStatus === "maybe") updated.maybe -= 1;
-        if (currentStatus === "notGoing") updated.notGoing -= 1;
-
-        if (nextStatus === "going") updated.going += 1;
-        if (nextStatus === "maybe") updated.maybe += 1;
-        if (nextStatus === "notGoing") updated.notGoing += 1;
-
-        updated.myStatus = nextStatus;
-        return updated;
-      })
-    );
-  }
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
 
   return (
     <main className="px-5 py-5">
       <section className="rounded-[2rem] p-5 border border-white/10 bg-white/[0.06] backdrop-blur">
         <p className="text-xs uppercase tracking-[0.22em] font-bold" style={{ color: COLORS.champagne }}>
-          Plan + RSVP
+          Plan + Schedule
         </p>
         <h1 className="text-3xl font-black mt-2" style={{ fontFamily: "Georgia, serif" }}>
-          Know the plan. Tell people if you’re going.
+          Cohort schedule
         </h1>
         <p className="text-sm text-white/60 mt-3 leading-6">
-          Official itinerary, vote-created events, and classmate-posted plans all live here.
+          Class sessions, assignments, and key dates for the Global 85 trip selection process.
         </p>
       </section>
 
-      <EventSection title="Events" eyebrow="Required + optional" events={events} onRsvp={updateRsvp} />
+      <section className="mt-6">
+        <SectionTitle eyebrow="Upcoming" title="Key dates" />
+        <div className="grid gap-3 mt-3">
+          {COHORT_EVENTS.map((event) => (
+            <EventCard key={event.id} event={event} today={today} />
+          ))}
+        </div>
+      </section>
     </main>
   );
 }
 
-function EventSection({ title, eyebrow, events, onRsvp }) {
-  return (
-    <section className="mt-6">
-      <SectionTitle eyebrow={eyebrow} title={title} />
-      <div className="grid gap-3 mt-3">
-        {events.map((event) => (
-          <EventCard key={event.id} event={event} onRsvp={onRsvp} />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function EventCard({ event, onRsvp }) {
-  const [showThread, setShowThread] = useState(false);
+function EventCard({ event, today }) {
+  const base = today || (() => { const d = new Date(); d.setHours(0,0,0,0); return d; })();
+  const daysAway = event.fullDate ? Math.ceil((event.fullDate - base) / 86400000) : null;
 
   return (
-    <div className="rounded-[2rem] p-4 border border-white/10 bg-white/[0.06] backdrop-blur">
+    <div className="rounded-[2rem] p-5 border border-white/10 bg-white/[0.06] backdrop-blur">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="flex-1 min-w-0">
           <div className="text-xs uppercase tracking-[0.18em] text-white/35 font-bold">{event.source}</div>
-          <h3 className="text-xl font-black mt-1" style={{ fontFamily: "Georgia, serif" }}>
+          <h3 className="text-xl font-black mt-1 leading-tight" style={{ fontFamily: "Georgia, serif" }}>
             {event.title}
           </h3>
-          <p className="text-sm text-white/55 mt-1">
-            {event.date} · {event.time}
-          </p>
+          <p className="text-sm text-white/55 mt-1">{event.date}</p>
         </div>
-
         <span
           className="text-[10px] uppercase tracking-wide px-2 py-1 rounded-full border shrink-0"
-          style={{
-            background: "rgba(198,90,46,0.14)",
-            color: COLORS.champagneLight,
-            borderColor: "rgba(243,213,138,0.18)",
-          }}
+          style={{ background: "rgba(198,90,46,0.14)", color: COLORS.champagneLight, borderColor: "rgba(243,213,138,0.18)" }}
         >
           {event.badge}
         </span>
@@ -3754,52 +3678,12 @@ function EventCard({ event, onRsvp }) {
 
       <p className="text-sm text-white/60 mt-3 leading-6">{event.detail}</p>
 
-      <div className="mt-4 grid grid-cols-3 gap-2">
-        <RsvpButton label="Going" count={event.going} active={event.myStatus === "going"} onClick={() => onRsvp(event.id, "going")} />
-        <RsvpButton label="Maybe" count={event.maybe} active={event.myStatus === "maybe"} onClick={() => onRsvp(event.id, "maybe")} />
-        <RsvpButton label="Not going" count={event.notGoing} active={event.myStatus === "notGoing"} onClick={() => onRsvp(event.id, "notGoing")} />
-      </div>
-
-      <button
-        onClick={() => setShowThread((prev) => !prev)}
-        className="mt-4 w-full rounded-2xl px-4 py-3 font-black text-left"
-        style={{
-          background: "rgba(255,255,255,0.08)",
-          border: "1px solid rgba(255,255,255,0.10)",
-          color: COLORS.champagneLight,
-        }}
-      >
-        {showThread ? "Hide event thread" : "Open event thread"} →
-      </button>
-
-      {showThread && (
-        <div className="mt-4 rounded-3xl border border-white/10 bg-black/25 p-4 space-y-2">
-          {event.thread.map((message) => (
-            <div key={message} className="rounded-2xl bg-white/[0.07] border border-white/10 px-3 py-2 text-sm text-white/68">
-              {message}
-            </div>
-          ))}
-        </div>
+      {daysAway !== null && (
+        <p className="mt-3 text-xs font-black" style={{ color: daysAway === 0 ? COLORS.champagneLight : daysAway > 0 ? `${COLORS.champagne}80` : "rgba(255,255,255,0.28)" }}>
+          {daysAway === 0 ? "Today" : daysAway > 0 ? `In ${daysAway} day${daysAway !== 1 ? "s" : ""}` : "Past"}
+        </p>
       )}
     </div>
-  );
-}
-
-function RsvpButton({ label, count, active, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      className="rounded-2xl border px-2 py-3 text-center"
-      style={{
-        background: active ? "rgba(243,213,138,0.14)" : "rgba(0,0,0,0.22)",
-        borderColor: active ? "rgba(243,213,138,0.42)" : "rgba(255,255,255,0.10)",
-      }}
-    >
-      <div className="font-black" style={{ color: active ? COLORS.champagne : "rgba(255,255,255,0.78)" }}>
-        {count}
-      </div>
-      <div className="text-[10px] uppercase tracking-wide text-white/42">{label}</div>
-    </button>
   );
 }
 
@@ -3894,7 +3778,6 @@ function CurrencyTool() {
         USD: 1, EUR: 0.92, GBP: 0.79, CLP: 950, KRW: 1370, SGD: 1.35,
         TRY: 38, ZAR: 18.5, KES: 130, RWF: 1320, ARS: 1000, VND: 25400,
         THB: 35, MYR: 4.70, INR: 83, MNT: 3450, COP: 4100, PEN: 3.75, MAD: 10.0,
-        GBP: 0.79,
       });
       setRateError(true);
     }
