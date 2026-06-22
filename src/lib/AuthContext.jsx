@@ -3,11 +3,6 @@ import { supabase } from "./supabase.js";
 
 const AuthContext = createContext(null);
 
-function checkUser(session) {
-  if (!session) return { user: null };
-  return { user: session.user };
-}
-
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(undefined); // undefined = still loading
 
@@ -17,24 +12,30 @@ export function AuthProvider({ children }) {
       return;
     }
 
-    // Subscribe FIRST — getSession() after, or the SIGNED_IN event from a
-    // magic-link redirect fires before the listener is attached and gets lost.
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
-      setUser(checkUser(session).user);
+      setUser(session?.user ?? null);
     });
 
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(checkUser(session).user);
+      setUser(session?.user ?? null);
     });
 
     return () => subscription.unsubscribe();
   }, []);
 
-  function sendMagicLink(email) {
+  function signUp(email, password) {
     if (!supabase) return Promise.reject(new Error("Supabase not configured."));
-    return supabase.auth.signInWithOtp({
+    return supabase.auth.signUp({
       email: email.trim().toLowerCase(),
-      options: { emailRedirectTo: window.location.origin },
+      password,
+    });
+  }
+
+  function signIn(email, password) {
+    if (!supabase) return Promise.reject(new Error("Supabase not configured."));
+    return supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
     });
   }
 
@@ -43,7 +44,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, sendMagicLink, signOut }}>
+    <AuthContext.Provider value={{ user, signUp, signIn, signOut }}>
       {children}
     </AuthContext.Provider>
   );
