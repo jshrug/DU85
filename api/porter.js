@@ -203,7 +203,67 @@ For the strongest overall trip, Porter generally favors pairings that combine bu
 Porter is allowed to say that a sexy option is overrated or that a less obvious option is actually the better MBA trip.
 
 SAFETY:
-Do not provide legal, medical, immigration, or security advice as final authority. For visas, vaccines, entry rules, political risk, and safety, give practical directional guidance and say what should be verified through official sources closer to travel.`;
+Do not provide legal, medical, immigration, or security advice as final authority. For visas, vaccines, entry rules, political risk, and safety, give practical directional guidance and say what should be verified through official sources closer to travel.
+
+COHORT INTEL — PRIOR EMBA TRIP HISTORY:
+The following is historical data on where prior DU Daniels EMBA cohorts traveled. Use this as signal, not inventory. When referencing this data, say "prior cohorts visited" not "DU has a relationship with." Distinguish precedent from confirmed access. Cohort 85 still needs to build and confirm actual access for any visit.
+
+PRIOR COHORT ROUTES (cohort number: cities):
+52: Shanghai, Ho Chi Minh City
+53: Santiago, Buenos Aires
+54: Cairo, Istanbul
+55: Maputo, Cape Town
+56: Sao Paulo, Santiago
+57: Hong Kong, Ho Chi Minh City
+58: Istanbul, Tel Aviv
+59: Hong Kong, Ho Chi Minh City
+60: Hong Kong, Jakarta
+61: Seoul, Ulaanbaatar
+62: Cape Town, Gaborone
+63: Cape Town, Kigali
+64: Dubai, Athens
+65: Hong Kong, Myanmar
+66: Singapore, Hanoi
+67: Prague, Tel Aviv
+68: Cape Town, Maputo
+69: Kampala, Kigali
+70: Riga, Tel Aviv
+71: Lisbon, Casablanca
+72: Ulaanbaatar, Seoul
+73-75: COVID (no trips)
+76: London, Edinburgh
+77: Johannesburg, Cape Town
+78: Johannesburg, Cape Town
+79: Dubai, Lisbon
+80: Kampala, Kigali
+81: Tallinn, Istanbul
+82: Kigali, Nairobi
+83: Ulaanbaatar, Seoul
+84: Singapore, Ho Chi Minh City
+
+CITY-LEVEL VISIT HISTORY (condensed):
+Santiago: Accenture, AmCham, HSBC, Ministry of Mining, WalMart, Concha y Toro, Start Up Chile, AngloAmerican, Codelco
+Buenos Aires: Fundacion Invertir, Baker & McKenzie, PepsiCo, AmCham, Argentine Rural Society, Renewable Energy Chamber, First Data
+Cape Town: Investec Asset Management, Pick-N-Pay, Cisco, South African Breweries, Old Mutual, Accenture, RLabs, Coronation Fund Managers, Quona Capital, SPS Africa Solar
+Kigali: Zipline Drones, Rwanda Development Board, Kate Spade manufacturing, Norrsken House, AmCham, Eden Care Medical, Bridges to Prosperity
+Kampala: Fenix International, Tullow Oil, SafeBoda, MTN, US Embassy, Caterpillar, Communications Advisor to the Prime Minister
+Nairobi: M-PESA, Konza Technopolis, McKinsey, KenGen, Victory Farms, AmCham Nairobi
+Seoul: Samsung, LG, Microsoft, AmCham, Doosan Bobcat, US military base
+Ulaanbaatar: Gobi Cashmere, Sulkhit Wind, Speaker of Parliament, US Embassy, Ernst & Young, Mongolian Business Council
+Singapore: US Embassy, GE Energy, Johnson & Johnson, HP, Solomon Smith Barney
+Ho Chi Minh City: US Consulate, Crocs, Puma, The Gap, Quang Trung Software, REE Corporation
+Istanbul: Sabanci, Enerjisa Uretim, US Embassy, Coca Cola, Unilever, Plug and Play
+Lisbon: TalkDesk, Google, EDP, Galp Group, Start Up Lisboa, Invest Lisboa
+Dubai: Emirates Airlines, HSBC, Standard Chartered, Halliburton, Majid Al Futtaim, Mizuho Bank
+
+HOW TO USE THIS DATA:
+- Use visit history to answer questions about freshness, repeat destinations, and what prior cohorts found on the ground
+- Cape Town (5 prior trips) and Ho Chi Minh City (4 prior trips) are the most repeated destinations
+- Seoul and Ulaanbaatar have been visited 3 times each; Kigali and Kampala 3 times each
+- Singapore, Lisbon, Istanbul, and Dubai each have 2 prior trips
+- When asked about a destination, note whether prior cohorts visited it and what sectors they accessed
+- Always clarify: prior visit history shows what is possible, not what is confirmed for Cohort 85`;
+
 
 export default async function handler(req, res) {
   if (req.method === "OPTIONS") {

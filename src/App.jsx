@@ -6,6 +6,16 @@ import SplashScreen from "./components/SplashScreen.jsx";
 import { supabase, COHORT_ID, getOrCreateUserId } from "./lib/supabase.js";
 import { DEEP_DIVE } from "./data/countryDeepDive.js";
 import { useAuth } from "./lib/AuthContext.jsx";
+import {
+  getFreshnessLabel,
+  getCohortsForCity,
+  getPreviousVisitOrgsForCity,
+  getCohortBuiltConnectionRead,
+  getPrecedentScore,
+  getMostRepeatedDestinations,
+  getRecentCohortDestinations,
+} from "./utils/destinationIntel.js";
+import { previousCohortTrips } from "./data/previousCohortIntel.js";
 
 const TRIP_DATE = import.meta.env.VITE_TRIP_DATE || null;
 
@@ -2235,6 +2245,12 @@ function DestinationChamber({
       )}
 
       {!deepDiveCountry && (
+        <div className="absolute left-5 bottom-[130px] z-40 hidden xl:block w-[min(22vw,260px)]">
+          <RouteArchive />
+        </div>
+      )}
+
+      {!deepDiveCountry && (
         <div className="absolute bottom-2 left-1/2 z-50 w-[min(94vw,900px)] -translate-x-1/2 sm:bottom-3">
           <DestinationConsole
             countries={countries}
@@ -2268,6 +2284,85 @@ function DestinationChamber({
         />
       )}
     </section>
+  );
+}
+
+function RouteArchive() {
+  const [open, setOpen] = useState(false);
+  const recentRoutes = getRecentCohortDestinations(5);
+  const topCities = getMostRepeatedDestinations().slice(0, 5);
+
+  return (
+    <div
+      className="rounded-2xl border backdrop-blur-xl overflow-hidden"
+      style={{
+        background: "rgba(8,4,0,0.68)",
+        borderColor: "rgba(196,150,42,0.20)",
+        boxShadow: "0 0 24px rgba(0,0,0,0.48)",
+      }}
+    >
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-4 py-2.5 text-left"
+      >
+        <span className="text-[9px] uppercase tracking-[0.26em] font-black" style={{ color: "rgba(243,213,138,0.62)" }}>
+          Route archive
+        </span>
+        <span className="text-[9px]" style={{ color: "rgba(243,213,138,0.45)" }}>
+          {open ? "▲" : "▼"}
+        </span>
+      </button>
+
+      {!open && (
+        <div className="px-4 pb-2.5">
+          <p className="text-[9px] text-white/32 leading-4">
+            Prior cohorts left a route history. Use it as signal.
+          </p>
+        </div>
+      )}
+
+      {open && (
+        <div className="px-4 pb-4 space-y-3 max-h-[180px] overflow-y-auto chamber-scrollbar">
+          <div>
+            <div className="text-[8px] uppercase tracking-[0.22em] font-black mb-1.5" style={{ color: "rgba(243,213,138,0.40)" }}>
+              Recent routes
+            </div>
+            <div className="space-y-1">
+              {recentRoutes.map((trip) => (
+                <div key={trip.cohort} className="flex items-center gap-2">
+                  <span className="text-[8px] font-black w-6 shrink-0" style={{ color: "rgba(196,150,42,0.55)" }}>
+                    {trip.cohort}
+                  </span>
+                  <span className="text-[9px] text-white/45 truncate">
+                    {trip.destinations.join(" + ")}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="text-[8px] uppercase tracking-[0.22em] font-black mb-1.5" style={{ color: "rgba(243,213,138,0.40)" }}>
+              Most repeated
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {topCities.map(({ city, count }) => (
+                <span
+                  key={city}
+                  className="rounded-full px-2 py-0.5 text-[8px] font-bold"
+                  style={{
+                    background: "rgba(196,150,42,0.08)",
+                    border: "1px solid rgba(196,150,42,0.16)",
+                    color: "rgba(255,216,128,0.55)",
+                  }}
+                >
+                  {city} ({count})
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -2795,6 +2890,65 @@ function FloatingIntelPanel({
           </div>
         </div>
 
+        {!mobile && (() => {
+          const cohorts = getCohortsForCity(country.name);
+          const orgs = getPreviousVisitOrgsForCity(country.name);
+          const freshness = getFreshnessLabel(country.name);
+          const operatorRead = getCohortBuiltConnectionRead(country.name);
+          const displayOrgs = orgs.slice(0, 6);
+          const extraOrgs = orgs.length - displayOrgs.length;
+          const freshnessColor =
+            freshness === "Fresh pick"
+              ? "#7DD3C0"
+              : freshness === "Some precedent"
+              ? "#A8C5E8"
+              : freshness === "Strong precedent"
+              ? "#E8B84B"
+              : "#E07060";
+          return (
+            <div className="mt-4 rounded-3xl border p-4" style={{ background: "rgba(0,0,0,0.28)", borderColor: "rgba(196,150,42,0.16)" }}>
+              <div className="flex items-center gap-2 mb-3">
+                <p className="text-xs uppercase tracking-[0.18em] font-black" style={{ color: COLORS.champagne }}>
+                  DU signal
+                </p>
+                <span
+                  className="rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider"
+                  style={{ background: "rgba(0,0,0,0.30)", border: `1px solid ${freshnessColor}44`, color: freshnessColor }}
+                >
+                  {freshness}
+                </span>
+              </div>
+              {cohorts.length > 0 && (
+                <p className="text-[10px] text-white/48 mb-2 font-bold">
+                  Cohorts {cohorts.join(", ")}
+                </p>
+              )}
+              {orgs.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-3">
+                  {displayOrgs.map((org) => (
+                    <span
+                      key={org}
+                      className="rounded-full px-2 py-0.5 text-[9px] font-bold"
+                      style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.10)", color: "rgba(255,255,255,0.52)" }}
+                    >
+                      {org}
+                    </span>
+                  ))}
+                  {extraOrgs > 0 && (
+                    <span
+                      className="rounded-full px-2 py-0.5 text-[9px] font-bold"
+                      style={{ background: "rgba(196,150,42,0.08)", border: "1px solid rgba(196,150,42,0.18)", color: "#FFD88066" }}
+                    >
+                      +{extraOrgs} more
+                    </span>
+                  )}
+                </div>
+              )}
+              <p className="text-[10px] leading-4 text-white/40 italic">{operatorRead}</p>
+            </div>
+          );
+        })()}
+
         {(mission.mode === "anchor-longlist" || mission.mode === "anchor-final") && CITY_B_MAP[country.name]?.length > 0 && (
           <div className="mt-4 rounded-3xl border border-white/10 bg-black/30 p-4">
             <p className="text-xs uppercase tracking-[0.18em] font-black" style={{ color: COLORS.champagne }}>
@@ -3112,6 +3266,75 @@ function DeepDivePanel({ country, mission, selected, onClose, onVote }) {
               </span>
             ))}
           </div>
+
+          {(() => {
+            const cohorts = getCohortsForCity(country.name);
+            const orgs = getPreviousVisitOrgsForCity(country.name);
+            const freshness = getFreshnessLabel(country.name);
+            const operatorRead = getCohortBuiltConnectionRead(country.name);
+            const displayOrgs = orgs.slice(0, 8);
+            const extraOrgs = orgs.length - displayOrgs.length;
+            const freshnessColor =
+              freshness === "Fresh pick"
+                ? "#7DD3C0"
+                : freshness === "Some precedent"
+                ? "#A8C5E8"
+                : freshness === "Strong precedent"
+                ? "#E8B84B"
+                : "#E07060";
+            return (
+              <div className="rounded-2xl border p-4" style={{ background: "rgba(0,0,0,0.28)", borderColor: "rgba(196,150,42,0.16)" }}>
+                <div className="flex items-center gap-2 mb-3">
+                  <div className="text-[10px] uppercase tracking-[0.26em] font-black" style={{ color: "#FFD880" }}>
+                    Prior cohort intel
+                  </div>
+                  <span
+                    className="rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider"
+                    style={{ background: "rgba(0,0,0,0.30)", border: `1px solid ${freshnessColor}44`, color: freshnessColor }}
+                  >
+                    {freshness}
+                  </span>
+                </div>
+                {cohorts.length > 0 ? (
+                  <p className="text-xs text-white/55 mb-3">
+                    Prior cohorts visited: <span className="font-bold text-white/70">{cohorts.join(", ")}</span>
+                  </p>
+                ) : (
+                  <p className="text-xs text-white/38 mb-3">No prior cohort has visited this city.</p>
+                )}
+                {orgs.length > 0 && (
+                  <div className="mb-3">
+                    <div className="text-[9px] uppercase tracking-[0.18em] font-black mb-2" style={{ color: "rgba(243,213,138,0.45)" }}>
+                      Organizations prior cohorts visited
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {displayOrgs.map((org) => (
+                        <span
+                          key={org}
+                          className="rounded-full px-2.5 py-1 text-[10px] font-bold"
+                          style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.10)", color: "rgba(255,255,255,0.58)" }}
+                        >
+                          {org}
+                        </span>
+                      ))}
+                      {extraOrgs > 0 && (
+                        <span
+                          className="rounded-full px-2.5 py-1 text-[10px] font-bold"
+                          style={{ background: "rgba(196,150,42,0.08)", border: "1px solid rgba(196,150,42,0.18)", color: "#FFD88077" }}
+                        >
+                          +{extraOrgs} more
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+                <p className="text-xs leading-5 text-white/45 italic">{operatorRead}</p>
+                <p className="mt-2 text-[10px] text-white/28 leading-4">
+                  This shows what prior cohorts accessed. Cohort 85 would still need to build and confirm actual access.
+                </p>
+              </div>
+            );
+          })()}
 
           <button
             onClick={onVote}
