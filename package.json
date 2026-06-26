@@ -13,6 +13,7 @@
     "@anthropic-ai/sdk": "^0.105.0",
     "@supabase/supabase-js": "^2.108.2",
     "firebase": "^12.9.0",
+    "mammoth": "^1.12.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-globe.gl": "^2.38.0",

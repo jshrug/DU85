@@ -7,6 +7,7 @@ import { supabase, COHORT_ID, getOrCreateUserId } from "./lib/supabase.js";
 import { DEEP_DIVE } from "./data/countryDeepDive.js";
 import { useAuth } from "./lib/AuthContext.jsx";
 import { fetchCountryBriefs, submitCountryBrief } from "./lib/porterMemory.js";
+import mammoth from "mammoth";
 import {
   getFreshnessLabel,
   getCohortsForCity,
@@ -1810,6 +1811,33 @@ function CountryBriefTab({ briefs, onBriefSubmitted }) {
   const [submitError, setSubmitError] = useState("");
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [focusedField, setFocusedField] = useState(null);
+  const [parsing, setParsing] = useState(false);
+  const [parsedFileName, setParsedFileName] = useState("");
+  const fileInputRef = useRef(null);
+
+  async function handleFileUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.endsWith(".docx")) {
+      setSubmitError("Only .docx files are supported.");
+      return;
+    }
+    setParsing(true);
+    setSubmitError("");
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const result = await mammoth.extractRawText({ arrayBuffer });
+      const extracted = result.value.trim();
+      if (!extracted) throw new Error("No text found in the document.");
+      setContent(extracted);
+      setParsedFileName(file.name);
+    } catch (err) {
+      setSubmitError(err.message || "Could not read the file.");
+    } finally {
+      setParsing(false);
+      e.target.value = "";
+    }
+  }
 
   async function handleSubmit() {
     if (!countryName.trim() || !content.trim()) {
@@ -1913,12 +1941,38 @@ function CountryBriefTab({ briefs, onBriefSubmitted }) {
           </DossierField>
 
           <DossierField label="Intelligence Brief">
+            {/* File upload strip */}
+            <div className="flex items-center gap-3 mb-2">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={parsing}
+                className="flex items-center gap-2 rounded-lg px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.16em] transition-all disabled:opacity-40"
+                style={{
+                  background: "rgba(196,150,42,0.09)",
+                  border: "1px solid rgba(196,150,42,0.28)",
+                  color: COLORS.champagne,
+                }}
+              >
+                {parsing ? "Reading…" : "Upload .docx"}
+              </button>
+              {parsedFileName && !parsing && (
+                <span className="text-[10px] text-white/38 truncate">{parsedFileName}</span>
+              )}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+            </div>
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
               onFocus={() => setFocusedField("content")}
               onBlur={() => setFocusedField(null)}
-              placeholder="Why this country. Key business themes. Suggested company visits. Logistics considerations. Cultural angle. Why it makes the strongest anchor city for Cohort 85."
+              placeholder="Paste your brief here, or upload a .docx above."
               rows={8}
               className="w-full rounded-xl px-4 py-3 text-sm leading-[1.7] resize-none placeholder:text-white/28"
               style={fieldStyle("content")}
