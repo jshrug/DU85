@@ -2569,7 +2569,7 @@ function DestinationChamber({
   const selectedName = activeMission.selectedName;
   const selected = selectedName === activeCountry?.name;
   const routeComplete = Boolean(anchorWinner && companionWinner);
-  const isMobile = typeof window !== "undefined" && window.innerWidth < 768;
+  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
 
   useEffect(() => {
     const selectedCountry = selectedName ? activeMission.options.find((country) => country.name === selectedName) : null;
@@ -2589,6 +2589,7 @@ function DestinationChamber({
           if (prev.width === next.width && prev.height === next.height) return prev;
           return next;
         });
+        setIsMobile(window.innerWidth < 768);
       });
     }
 
@@ -3007,57 +3008,72 @@ function DestinationChamber({
 
       {activeCountry && !isMobile && !deepDiveCountry && <ConnectorBeam />}
 
-      {activeCountry && !deepDiveCountry && (
-        <div className="absolute right-5 top-[52%] z-40 hidden w-[min(35vw,500px)] -translate-y-1/2 xl:block">
-          <FloatingIntelPanel
-            mission={activeMission}
-            country={activeCountry}
-            selected={selected}
-            routeComplete={routeComplete}
-            anchorWinner={anchorWinner}
-            companionWinner={companionWinner}
-            onVote={() => activeCountry && onVote(activeCountry)}
-            onAdvance={onAdvance}
-            onDeepDive={openDeepDive}
-          />
-        </div>
-      )}
-
-      {activeCountry && !deepDiveCountry && (
-        <div
-          className="absolute inset-x-3 bottom-[116px] z-40 xl:hidden"
-          onTouchStart={(e) => e.stopPropagation()}
-          onTouchMove={(e) => e.stopPropagation()}
-        >
-          <FloatingIntelPanel
-            mission={activeMission}
-            country={activeCountry}
-            selected={selected}
-            routeComplete={routeComplete}
-            anchorWinner={anchorWinner}
-            companionWinner={companionWinner}
-            onVote={() => activeCountry && onVote(activeCountry)}
-            onAdvance={onAdvance}
-            onDeepDive={openDeepDive}
-            mobile
-          />
-        </div>
-      )}
-
-      {!activeCountry && !deepDiveCountry && (
-        <div className="absolute right-5 top-[52%] z-40 hidden w-[min(32vw,440px)] -translate-y-1/2 xl:block">
-          <EmptyCountryPrompt activeMission={activeMission} />
-        </div>
-      )}
-
+      {/* ── DESKTOP (xl+): right-side intel panel ── */}
       {!deepDiveCountry && (
-        <div className="absolute left-5 bottom-[130px] z-40 hidden xl:block w-[min(22vw,260px)]">
+        <div className="absolute right-5 top-1/2 z-40 hidden w-[min(35vw,500px)] -translate-y-1/2 xl:block">
+          {activeCountry ? (
+            <FloatingIntelPanel
+              mission={activeMission}
+              country={activeCountry}
+              selected={selected}
+              routeComplete={routeComplete}
+              anchorWinner={anchorWinner}
+              companionWinner={companionWinner}
+              onVote={() => activeCountry && onVote(activeCountry)}
+              onAdvance={onAdvance}
+              onDeepDive={openDeepDive}
+            />
+          ) : (
+            <EmptyCountryPrompt activeMission={activeMission} />
+          )}
+        </div>
+      )}
+
+      {/* ── DESKTOP (xl+): bottom-left route archive ── */}
+      {!deepDiveCountry && (
+        <div className="absolute left-5 z-40 hidden xl:block w-[min(22vw,260px)]" style={{ bottom: "min(14vh,140px)" }}>
           <RouteArchive />
         </div>
       )}
 
+      {/* ── DESKTOP (xl+): bottom console ── */}
       {!deepDiveCountry && (
-        <div className="absolute bottom-2 left-1/2 z-50 w-[min(94vw,900px)] -translate-x-1/2 sm:bottom-3">
+        <div className="absolute bottom-2 left-1/2 z-50 hidden w-[min(94vw,900px)] -translate-x-1/2 sm:bottom-3 xl:block">
+          <DestinationConsole
+            countries={countries}
+            activeCountry={activeCountry}
+            selectedName={selectedName}
+            finalistNames={activeMission.finalistNames}
+            onSelectCountry={handlePointClick}
+            onPorterPick={onPorterPick}
+            onAdvance={onAdvance}
+            canAdvance={activeMission.canAdvance}
+            routeComplete={routeComplete}
+          />
+        </div>
+      )}
+
+      {/* ── MOBILE / TABLET (<xl): stacked bottom section ── */}
+      {!deepDiveCountry && (
+        <div
+          className="absolute inset-x-0 bottom-0 z-40 flex flex-col gap-2 p-2.5 pb-3 xl:hidden"
+          onTouchStart={(e) => e.stopPropagation()}
+          onTouchMove={(e) => e.stopPropagation()}
+        >
+          {activeCountry && (
+            <FloatingIntelPanel
+              mission={activeMission}
+              country={activeCountry}
+              selected={selected}
+              routeComplete={routeComplete}
+              anchorWinner={anchorWinner}
+              companionWinner={companionWinner}
+              onVote={() => activeCountry && onVote(activeCountry)}
+              onAdvance={onAdvance}
+              onDeepDive={openDeepDive}
+              mobile
+            />
+          )}
           <DestinationConsole
             countries={countries}
             activeCountry={activeCountry}
@@ -3602,7 +3618,7 @@ function FloatingIntelPanel({
     <div
       className={[
         "relative overflow-hidden rounded-[1.7rem] sm:rounded-[2.1rem] border backdrop-blur-2xl chamber-scrollbar",
-        mobile ? "mobile-panel-materialize max-h-[34vh] overflow-y-auto" : "panel-materialize max-h-[calc(100vh-168px)] overflow-y-auto",
+        mobile ? "mobile-panel-materialize max-h-[36vh] overflow-y-auto" : "panel-materialize max-h-[min(calc(100vh-180px),680px)] overflow-y-auto",
       ].join(" ")}
       style={{
         background:
