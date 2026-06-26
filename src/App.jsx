@@ -2296,10 +2296,18 @@ function VotesPage() {
   // Compute anchor finalists — accounts for runoff results
   const anchorFinalists = useMemo(() => {
     if (missionIndex >= 2 && Object.keys(anchorRunoffVotes).length > 0) {
-      // Runoff happened: top from longlist + runoff winner
-      const longlistTop = Object.entries(anchorVotes).sort((a, b) => b[1] - a[1])[0]?.[0];
+      const sortedLonglist = Object.entries(anchorVotes).sort((a, b) => b[1] - a[1]);
+      const firstScore = sortedLonglist[0]?.[1];
+      const secondScore = sortedLonglist[1]?.[1];
       const runoffWinner = Object.entries(anchorRunoffVotes).sort((a, b) => b[1] - a[1])[0]?.[0];
-      return uniqueByName([longlistTop, runoffWinner].filter(Boolean).map(getCountryByName).filter(Boolean));
+      if (firstScore === secondScore) {
+        // Tie for 1st: runoff winner + the highest-scoring city not in the runoff
+        const runoffNames = sortedLonglist.filter(([, s]) => s === firstScore).map(([n]) => n);
+        const autoAdvance = sortedLonglist.find(([name]) => !runoffNames.includes(name))?.[0];
+        return uniqueByName([runoffWinner, autoAdvance].filter(Boolean).map(getCountryByName).filter(Boolean));
+      }
+      // Tie for 2nd: unchallenged longlist leader + runoff winner
+      return uniqueByName([sortedLonglist[0]?.[0], runoffWinner].filter(Boolean).map(getCountryByName).filter(Boolean));
     }
     return getTopCountries(ANCHOR_COUNTRIES, anchorVotes, 2);
   }, [anchorVotes, anchorRunoffVotes, missionIndex]);
@@ -2324,9 +2332,16 @@ function VotesPage() {
   // Compute companion finalists — accounts for runoff results
   const companionFinalists = useMemo(() => {
     if (missionIndex >= 5 && Object.keys(companionRunoffVotes).length > 0) {
-      const longlistTop = Object.entries(companionVotes).sort((a, b) => b[1] - a[1])[0]?.[0];
+      const sortedLonglist = Object.entries(companionVotes).sort((a, b) => b[1] - a[1]);
+      const firstScore = sortedLonglist[0]?.[1];
+      const secondScore = sortedLonglist[1]?.[1];
       const runoffWinner = Object.entries(companionRunoffVotes).sort((a, b) => b[1] - a[1])[0]?.[0];
-      return uniqueByName([longlistTop, runoffWinner].filter(Boolean).map(getCountryByName).filter(Boolean));
+      if (firstScore === secondScore) {
+        const runoffNames = sortedLonglist.filter(([, s]) => s === firstScore).map(([n]) => n);
+        const autoAdvance = sortedLonglist.find(([name]) => !runoffNames.includes(name))?.[0];
+        return uniqueByName([runoffWinner, autoAdvance].filter(Boolean).map(getCountryByName).filter(Boolean));
+      }
+      return uniqueByName([sortedLonglist[0]?.[0], runoffWinner].filter(Boolean).map(getCountryByName).filter(Boolean));
     }
     return getTopCountries(companionOptions, companionVotes, 2);
   }, [companionOptions, companionVotes, companionRunoffVotes, missionIndex]);
