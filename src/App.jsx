@@ -35,6 +35,8 @@ const COLORS = {
   goldLight: "#E8B84B",
 };
 
+const COHORT_SIZE = 16;
+
 function getInitialGlobeSize() {
   if (typeof window === "undefined") return { width: 1400, height: 900 };
   return { width: window.innerWidth, height: window.innerHeight };
@@ -2234,7 +2236,7 @@ function VotesPage() {
     pushStateToSupabase({ mission_index: nextMissionIndex });
   }
 
-  async function handleAdvance() {
+  const handleAdvance = useCallback(async function handleAdvance() {
     if (!activeMission?.canAdvance) return;
 
     // 0: anchor-longlist → check for tie → go to runoff (1) or skip to final (2)
@@ -2323,7 +2325,22 @@ function VotesPage() {
         pushStateToSupabase({ companion_winner: winner.name });
       }
     }
-  }
+  }, [missionIndex, activeMission, anchorVotes, anchorFinalists, companionVotes, companionFinalists, anchorWinner, companionWinner, allVoteCounts]);
+
+  // Auto-advance when all COHORT_SIZE votes are in for the active phase.
+  // A ref guards against firing twice if the count briefly hits 16 during a re-render.
+  const autoAdvancedForPhase = useRef(null);
+  useEffect(() => {
+    const phase = activeMission?.mode;
+    if (!phase || !activeMission?.canAdvance) return;
+    // Don't auto-advance the final missions — those lock the destination; keep that explicit.
+    if (phase === "anchor-final" || phase === "companion-final") return;
+    const voteCount = Object.values(activeMission.votes || {}).reduce((s, n) => s + n, 0);
+    if (voteCount >= COHORT_SIZE && autoAdvancedForPhase.current !== phase) {
+      autoAdvancedForPhase.current = phase;
+      handleAdvance();
+    }
+  }, [activeMission, handleAdvance]);
 
   function handleMissionJump(index) {
     if (index <= missionIndex) setMissionIndex(index);
@@ -2520,6 +2537,7 @@ function VotesPage() {
   );
 
   const activeMission = missions[Math.min(missionIndex, missions.length - 1)];
+  const activeVoteCount = Object.values(activeMission?.votes || {}).reduce((s, n) => s + n, 0);
 
   return (
     <main className="fixed inset-0 z-[999] overflow-hidden">
@@ -2527,6 +2545,7 @@ function VotesPage() {
         missions={missions}
         missionIndex={missionIndex}
         activeMission={activeMission}
+        activeVoteCount={activeVoteCount}
         anchorWinner={anchorWinner}
         companionWinner={companionWinner}
         showCelebration={showCelebration}
@@ -2545,6 +2564,7 @@ function DestinationChamber({
   missions,
   missionIndex,
   activeMission,
+  activeVoteCount,
   anchorWinner,
   companionWinner,
   showCelebration,
@@ -2942,6 +2962,7 @@ function DestinationChamber({
           missions={missions}
           missionIndex={missionIndex}
           activeMission={activeMission}
+          activeVoteCount={activeVoteCount}
           anchorWinner={anchorWinner}
           companionWinner={companionWinner}
           onMissionJump={onMissionJump}
@@ -3469,24 +3490,39 @@ function MissionHud({
   missions,
   missionIndex,
   activeMission,
+  activeVoteCount,
   anchorWinner,
   companionWinner,
   onMissionJump,
 }) {
+  const isFinal = activeMission.mode === "anchor-final" || activeMission.mode === "companion-final";
+  const allVoted = activeVoteCount >= COHORT_SIZE;
+
   return (
     <div
       className="rounded-[1.35rem] border px-3 py-2 backdrop-blur-2xl"
       style={{
         background:
           "linear-gradient(135deg, rgba(14,3,4,0.62), rgba(10,2,3,0.40)), radial-gradient(circle at 16% 12%, rgba(196,150,42,0.12), transparent 34%)",
-        borderColor: "rgba(196,150,42,0.22)",
-        boxShadow: "0 0 35px rgba(196,150,42,0.08)",
+        borderColor: allVoted && !isFinal ? "rgba(232,184,75,0.52)" : "rgba(196,150,42,0.22)",
+        boxShadow: allVoted && !isFinal
+          ? "0 0 28px rgba(232,184,75,0.22)"
+          : "0 0 35px rgba(196,150,42,0.08)",
+        transition: "border-color 0.4s, box-shadow 0.4s",
       }}
     >
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-[#E8B84B] shadow-[0_0_12px_rgba(232,184,75,0.9)]" />
+            <span
+              className="h-1.5 w-1.5 rounded-full"
+              style={{
+                background: allVoted && !isFinal ? COLORS.champagneLight : "#E8B84B",
+                boxShadow: allVoted && !isFinal
+                  ? "0 0 12px rgba(243,213,138,1)"
+                  : "0 0 12px rgba(232,184,75,0.9)",
+              }}
+            />
             <p className="text-[9px] uppercase tracking-[0.28em] font-black" style={{ color: "#FFD880" }}>
               {activeMission.eyebrow}
             </p>
@@ -3497,9 +3533,29 @@ function MissionHud({
           </h1>
         </div>
 
-        <div className="hidden shrink-0 items-center gap-2 md:flex">
-          <HudLock label="A" value={anchorWinner?.name || "Pending"} active={Boolean(anchorWinner)} />
-          <HudLock label="B" value={companionWinner?.name || "Pending"} active={Boolean(companionWinner)} />
+        <div className="flex shrink-0 items-center gap-2">
+          {/* Live vote counter */}
+          {!isFinal && (
+            <div
+              className="rounded-xl border px-2.5 py-1.5 text-center"
+              style={{
+                background: allVoted ? "rgba(243,213,138,0.12)" : "rgba(0,0,0,0.22)",
+                borderColor: allVoted ? "rgba(243,213,138,0.36)" : "rgba(255,255,255,0.08)",
+              }}
+            >
+              <p className="text-[8px] uppercase tracking-[0.18em] text-white/35 font-black">Voted</p>
+              <p
+                className="mt-0.5 text-sm font-black tabular-nums"
+                style={{ color: allVoted ? COLORS.champagneLight : "rgba(255,255,255,0.72)" }}
+              >
+                {activeVoteCount}<span className="text-[10px] text-white/35">/{COHORT_SIZE}</span>
+              </p>
+            </div>
+          )}
+          <div className="hidden items-center gap-2 md:flex">
+            <HudLock label="A" value={anchorWinner?.name || "Pending"} active={Boolean(anchorWinner)} />
+            <HudLock label="B" value={companionWinner?.name || "Pending"} active={Boolean(companionWinner)} />
+          </div>
         </div>
       </div>
 
