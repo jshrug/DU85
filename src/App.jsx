@@ -6,6 +6,7 @@ import SplashScreen from "./components/SplashScreen.jsx";
 import { supabase, COHORT_ID, getOrCreateUserId } from "./lib/supabase.js";
 import { DEEP_DIVE } from "./data/countryDeepDive.js";
 import { useAuth } from "./lib/AuthContext.jsx";
+import { fetchCountryBriefs, submitCountryBrief } from "./lib/porterMemory.js";
 import {
   getFreshnessLabel,
   getCohortsForCity,
@@ -620,10 +621,28 @@ const COHORT_EVENTS = [
   {
     id: "cohort-3",
     source: "Class Session",
-    title: "Presentations + Destination Vote",
+    title: "City A Presentations + Vote",
     date: "Jul 11",
     fullDate: new Date("2026-07-11"),
-    detail: "In-class presentations followed by both rounds of voting for the destination city.",
+    detail: "30-min presentations per team, 10-min Q&A, 10-min break, then anonymous vote through Porter. Porter tallies results, announces top 2, and runs any tiebreaker runoff on the spot. Top 2 advance to the City A final vote.",
+    badge: "Required",
+  },
+  {
+    id: "cohort-4",
+    source: "Assignment Due",
+    title: "City B Briefing Due",
+    date: "Jul 15",
+    fullDate: new Date("2026-07-15"),
+    detail: "Each presentation team submits their City B briefing document to Porter before class.",
+    badge: "Due",
+  },
+  {
+    id: "cohort-5",
+    source: "Class Session",
+    title: "City B Presentations + Vote",
+    date: "Jul 18",
+    fullDate: new Date("2026-07-18"),
+    detail: "Same format as City A: 30-min presentations, 10-min Q&A, 10-min break, anonymous vote through Porter. Porter tallies results and announces the winning City B. Up to 2 cities advance to the City B final vote.",
     badge: "Required",
   },
 ];
@@ -1227,9 +1246,109 @@ function SmallEventCard({ event, today }) {
   );
 }
 
+function PorterCSS() {
+  return (
+    <style>{`
+      @keyframes porterRingIdle {
+        0%   { transform: scale(0.74); opacity: 0.70; }
+        100% { transform: scale(2.60); opacity: 0; }
+      }
+      @keyframes porterRingActive {
+        0%   { transform: scale(0.68); opacity: 0.88; }
+        100% { transform: scale(1.85); opacity: 0; }
+      }
+      @keyframes porterBellIdle {
+        0%, 100% {
+          box-shadow: 0 0 22px rgba(196,150,42,0.18), 0 0 0 1px rgba(196,150,42,0.16);
+        }
+        50% {
+          box-shadow: 0 0 44px rgba(232,184,75,0.36), 0 0 80px rgba(196,150,42,0.14), 0 0 0 1px rgba(243,213,138,0.28);
+        }
+      }
+      @keyframes porterBellActive {
+        0%, 100% {
+          box-shadow: 0 0 28px rgba(198,90,46,0.30), 0 0 0 1px rgba(198,90,46,0.28);
+        }
+        50% {
+          box-shadow: 0 0 58px rgba(232,120,60,0.52), 0 0 110px rgba(196,90,46,0.22), 0 0 0 1px rgba(230,110,50,0.44);
+        }
+      }
+      @keyframes porterMsgIn {
+        0%   { opacity: 0; transform: translateY(10px) scale(0.98); }
+        100% { opacity: 1; transform: translateY(0)   scale(1); }
+      }
+      @keyframes porterDot {
+        0%, 60%, 100% { transform: translateY(0);    opacity: 0.25; }
+        30%            { transform: translateY(-6px); opacity: 1; }
+      }
+      @keyframes porterCursor {
+        0%, 100% { opacity: 1; }
+        50%       { opacity: 0; }
+      }
+      @keyframes porterStatusPulse {
+        0%, 100% { opacity: 1; }
+        50%       { opacity: 0.28; }
+      }
+      @keyframes porterGridDrift {
+        0%   { background-position: 0 0; }
+        100% { background-position: 40px 40px; }
+      }
+      .porter-msg        { animation: porterMsgIn 380ms cubic-bezier(.18,.9,.22,1) both; }
+      .porter-dot-1      { animation: porterDot 1.15s ease-in-out infinite 0s; }
+      .porter-dot-2      { animation: porterDot 1.15s ease-in-out infinite 0.19s; }
+      .porter-dot-3      { animation: porterDot 1.15s ease-in-out infinite 0.38s; }
+      .porter-cursor     { animation: porterCursor 0.85s step-end infinite; }
+      .porter-status-active { animation: porterStatusPulse 1.4s ease-in-out infinite; }
+      .porter-grid       {
+        animation: porterGridDrift 8s linear infinite;
+        background-image:
+          linear-gradient(rgba(196,150,42,0.055) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(196,150,42,0.055) 1px, transparent 1px);
+        background-size: 40px 40px;
+      }
+    `}</style>
+  );
+}
+
+function PorterBellRings({ streaming }) {
+  const rings = [0, 1, 2];
+  return (
+    <div className="relative flex items-center justify-center" style={{ width: 130, height: 130 }}>
+      {rings.map((i) => (
+        <div
+          key={i}
+          className="absolute rounded-full"
+          style={{
+            width: 76, height: 76,
+            border: `1px solid ${streaming ? "rgba(198,90,46,0.75)" : "rgba(196,150,42,0.68)"}`,
+            animation: streaming
+              ? `porterRingActive 1.05s ease-out infinite ${i * 0.35}s`
+              : `porterRingIdle  3.60s ease-out infinite ${i * 1.18}s`,
+          }}
+        />
+      ))}
+      <div
+        className="relative z-10 flex items-center justify-center rounded-[22px]"
+        style={{
+          width: 76, height: 76,
+          fontSize: "2.1rem",
+          background: streaming
+            ? `linear-gradient(145deg, ${COLORS.ember}cc, ${COLORS.roseSmoke}aa)`
+            : `linear-gradient(145deg, rgba(196,150,42,0.16), rgba(243,213,138,0.07))`,
+          border: `1px solid ${streaming ? "rgba(198,90,46,0.48)" : "rgba(196,150,42,0.32)"}`,
+          animation: streaming ? "porterBellActive 1.6s ease-in-out infinite" : "porterBellIdle 3.4s ease-in-out infinite",
+        }}
+      >
+        🛎️
+      </div>
+    </div>
+  );
+}
+
 function PorterPage() {
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const [tab, setTab] = useState("chat");
   const [messages, setMessages] = useState([
     {
       role: "assistant",
@@ -1239,6 +1358,11 @@ function PorterPage() {
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState("");
+  const [briefs, setBriefs] = useState([]);
+
+  useEffect(() => {
+    fetchCountryBriefs().then(setBriefs).catch(() => {});
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1260,6 +1384,7 @@ function PorterPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: next.map((m) => ({ role: m.role, text: m.text })),
+          briefs,
         }),
       });
 
@@ -1279,10 +1404,7 @@ function PorterPage() {
           if (payload === "[DONE]") break;
           try {
             const parsed = JSON.parse(payload);
-            if (parsed.text) {
-              accumulated += parsed.text;
-              setStreamingText(accumulated);
-            }
+            if (parsed.text) { accumulated += parsed.text; setStreamingText(accumulated); }
             if (parsed.error) throw new Error(parsed.error);
           } catch {}
         }
@@ -1302,97 +1424,621 @@ function PorterPage() {
     ? [...messages, { role: "assistant", text: streamingText, streaming: true }]
     : messages;
 
+  const statusLabel = streaming
+    ? "Processing intel"
+    : briefs.length > 0
+    ? `${briefs.length} brief${briefs.length !== 1 ? "s" : ""} loaded`
+    : "Standing by";
+
   return (
-    <main className="px-5 py-5 flex flex-col gap-5">
-      <section className="rounded-[2rem] p-5 border border-white/10 bg-white/[0.06] backdrop-blur">
-        <div className="flex items-center gap-3">
-          <div
-            className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0"
-            style={{ background: `linear-gradient(135deg, ${COLORS.champagne}, ${COLORS.ember}, ${COLORS.roseSmoke})` }}
-          >
-            🛎️
-          </div>
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] font-bold" style={{ color: "rgba(243,213,138,0.72)" }}>
-              Private Cohort Concierge
+    <main className="pb-6">
+      <PorterCSS />
+
+      {/* ── HERO ─────────────────────────────────────────────── */}
+      <div className="relative overflow-hidden pt-7 pb-8 px-5">
+        {/* Ambient radials */}
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background: [
+              "radial-gradient(ellipse 70% 55% at 50% 0%, rgba(196,150,42,0.13), transparent)",
+              "radial-gradient(circle at 18% 85%, rgba(198,90,46,0.09), transparent 42%)",
+              "radial-gradient(circle at 88% 20%, rgba(243,213,138,0.06), transparent 36%)",
+            ].join(", "),
+          }}
+        />
+        {/* Drifting grid */}
+        <div className="porter-grid pointer-events-none absolute inset-0 opacity-100" />
+
+        {/* Horizontal accent line at top */}
+        <div
+          className="absolute top-0 left-0 right-0 h-px"
+          style={{
+            background: "linear-gradient(90deg, transparent 0%, rgba(196,150,42,0.48) 35%, rgba(243,213,138,0.72) 50%, rgba(196,150,42,0.48) 65%, transparent 100%)",
+          }}
+        />
+
+        <div className="relative z-10 flex flex-col items-center text-center">
+          <PorterBellRings streaming={streaming} />
+
+          {/* Wordmark */}
+          <div className="mt-4">
+            <p
+              className="text-[9px] uppercase font-black tracking-[0.52em] mb-2"
+              style={{ color: "rgba(243,213,138,0.44)" }}
+            >
+              Global 85
             </p>
-            <h1 className="text-3xl font-black" style={{ fontFamily: "Georgia, serif" }}>
-              Porter
+            <h1
+              style={{
+                fontFamily: "Georgia, ‘Times New Roman’, serif",
+                fontSize: "clamp(3.4rem, 13vw, 5.8rem)",
+                fontWeight: 900,
+                letterSpacing: "0.20em",
+                lineHeight: 1,
+                background: `linear-gradient(155deg, ${COLORS.champagneLight} 0%, ${COLORS.champagne} 35%, ${COLORS.gold} 68%, ${COLORS.ember} 100%)`,
+                WebkitBackgroundClip: "text",
+                WebkitTextFillColor: "transparent",
+                backgroundClip: "text",
+              }}
+            >
+              PORTER
             </h1>
           </div>
-        </div>
 
-        <p className="text-sm text-white/55 mt-3 leading-6">
-          Destinations · logistics · company visits · culture · itinerary · food
-        </p>
+          {/* Divider */}
+          <div
+            className="mt-4 h-px"
+            style={{
+              width: "min(280px,74vw)",
+              background: "linear-gradient(90deg, transparent, rgba(196,150,42,0.52), rgba(243,213,138,0.76), rgba(196,150,42,0.52), transparent)",
+            }}
+          />
 
-        <div className="grid sm:grid-cols-2 gap-2 mt-4">
-          {SAMPLE_PROMPTS.map((prompt) => (
-            <button
-              key={prompt}
-              onClick={() => sendMessage(prompt)}
-              disabled={streaming}
-              className="text-left rounded-2xl px-4 py-3 border border-white/10 bg-black/20 text-sm text-white/75 hover:bg-white/10 hover:text-white transition disabled:opacity-40"
+          {/* Tagline */}
+          <p
+            className="mt-3 text-[10px] uppercase tracking-[0.30em] font-bold"
+            style={{ color: "rgba(255,255,255,0.28)" }}
+          >
+            Private Cohort Concierge
+          </p>
+
+          {/* Status indicator */}
+          <div className="mt-3 flex items-center gap-2.5">
+            <span
+              className={`rounded-full ${streaming ? "porter-status-active" : ""}`}
+              style={{
+                display: "inline-block",
+                width: 6, height: 6,
+                background: streaming ? COLORS.ember : COLORS.goldLight,
+                boxShadow: streaming
+                  ? `0 0 10px ${COLORS.ember}, 0 0 20px rgba(198,90,46,0.44)`
+                  : `0 0 8px ${COLORS.goldLight}`,
+              }}
+            />
+            <span
+              className="text-[9px] uppercase tracking-[0.28em] font-black"
+              style={{ color: streaming ? "rgba(232,120,60,0.72)" : "rgba(243,213,138,0.52)" }}
             >
-              {prompt}
+              {statusLabel}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── TAB STRIP ────────────────────────────────────────── */}
+      <div className="px-5 mb-5">
+        <div
+          className="flex rounded-2xl p-1"
+          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
+        >
+          {[["chat", "Briefing Room"], ["brief", "Dossier"]].map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setTab(key)}
+              className="flex-1 rounded-xl py-2.5 text-[10px] font-black uppercase tracking-[0.18em] transition-all"
+              style={{
+                background: tab === key
+                  ? `linear-gradient(135deg, ${COLORS.champagne}, ${COLORS.ember})`
+                  : "transparent",
+                color: tab === key ? "#16060a" : "rgba(255,255,255,0.34)",
+              }}
+            >
+              {label}
             </button>
           ))}
         </div>
-      </section>
+      </div>
 
-      <section className="rounded-[2rem] border border-white/10 bg-black/20 overflow-hidden flex flex-col" style={{ minHeight: 340 }}>
-        <div className="flex-1 p-4 overflow-y-auto space-y-3 max-h-[520px] chamber-scrollbar">
-          {allDisplayMessages.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-              {msg.role === "assistant" && (
-                <div
-                  className="w-7 h-7 rounded-xl flex items-center justify-center text-sm shrink-0 mr-2 mt-0.5"
-                  style={{ background: `linear-gradient(135deg, ${COLORS.champagne}, ${COLORS.ember})` }}
-                >
-                  🛎️
-                </div>
-              )}
-              <div
-                className="rounded-3xl px-4 py-3 max-w-[82%] text-sm leading-6"
-                style={
-                  msg.role === "user"
-                    ? { background: `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne})`, color: "#17060b", fontWeight: 700 }
-                    : { background: "rgba(255,255,255,0.09)", color: "rgba(255,255,255,0.82)", border: "1px solid rgba(255,255,255,0.09)" }
-                }
+      {/* ── CHAT TAB ─────────────────────────────────────────── */}
+      {tab === "chat" && (
+        <div className="px-5 flex flex-col gap-4">
+          {/* Mission prompt tiles */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {SAMPLE_PROMPTS.map((prompt, i) => (
+              <button
+                key={prompt}
+                onClick={() => sendMessage(prompt)}
+                disabled={streaming}
+                className="group relative overflow-hidden text-left rounded-2xl p-4 border transition-all disabled:opacity-30"
+                style={{
+                  background: "rgba(255,255,255,0.028)",
+                  borderColor: "rgba(255,255,255,0.07)",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.borderColor = "rgba(196,150,42,0.38)";
+                  e.currentTarget.style.background = "rgba(196,150,42,0.05)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.borderColor = "rgba(255,255,255,0.07)";
+                  e.currentTarget.style.background = "rgba(255,255,255,0.028)";
+                }}
               >
-                {msg.text || (msg.streaming && <span className="animate-pulse opacity-60">▌</span>)}
-                {msg.streaming && msg.text && <span className="animate-pulse opacity-60">▌</span>}
+                <div
+                  className="text-[8px] uppercase tracking-[0.30em] font-black mb-2"
+                  style={{ color: "rgba(243,213,138,0.34)" }}
+                >
+                  Query {String(i + 1).padStart(2, "0")}
+                </div>
+                <p className="text-sm text-white/60 leading-5 pr-5">
+                  {prompt}
+                </p>
+                <span
+                  className="absolute bottom-3.5 right-4 text-xs font-black opacity-0 group-hover:opacity-100 transition-opacity"
+                  style={{ color: COLORS.champagne }}
+                >
+                  →
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {/* Conversation panel */}
+          <div
+            className="relative rounded-[1.8rem] overflow-hidden flex flex-col"
+            style={{
+              background: "rgba(4,3,1,0.68)",
+              border: "1px solid rgba(196,150,42,0.14)",
+              minHeight: 340,
+            }}
+          >
+            {/* Top accent line */}
+            <div
+              className="h-px shrink-0"
+              style={{
+                background: streaming
+                  ? `linear-gradient(90deg, transparent, rgba(198,90,46,0.52), rgba(230,110,50,0.72), rgba(198,90,46,0.52), transparent)`
+                  : `linear-gradient(90deg, transparent, rgba(196,150,42,0.36), rgba(243,213,138,0.52), rgba(196,150,42,0.36), transparent)`,
+                transition: "background 0.6s ease",
+              }}
+            />
+
+            {/* Messages */}
+            <div className="flex-1 p-4 overflow-y-auto space-y-5 max-h-[500px] chamber-scrollbar">
+              {allDisplayMessages.map((msg, i) => (
+                <div key={i} className="porter-msg">
+                  {msg.role === "assistant" ? (
+                    <div>
+                      {/* Porter briefing panel */}
+                      <div
+                        className="relative py-3.5 px-4 pl-[18px] rounded-r-2xl rounded-bl-2xl max-w-[94%]"
+                        style={{
+                          background: "rgba(255,255,255,0.038)",
+                          borderLeft: `2.5px solid ${msg.streaming && !msg.text ? COLORS.ember : COLORS.gold}`,
+                        }}
+                      >
+                        {msg.streaming && !msg.text ? (
+                          <div className="flex items-center gap-2.5 py-0.5">
+                            {[1, 2, 3].map((j) => (
+                              <span
+                                key={j}
+                                className={`porter-dot-${j} inline-block rounded-full`}
+                                style={{
+                                  width: 7, height: 7,
+                                  background: COLORS.goldLight,
+                                  boxShadow: `0 0 7px ${COLORS.gold}`,
+                                }}
+                              />
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="text-sm leading-[1.75] text-white/80 whitespace-pre-wrap">
+                            {msg.text}
+                            {msg.streaming && (
+                              <span
+                                className="porter-cursor inline-block ml-0.5 align-middle"
+                                style={{
+                                  width: 2, height: "1em",
+                                  background: COLORS.goldLight,
+                                  borderRadius: 1,
+                                  verticalAlign: "middle",
+                                }}
+                              />
+                            )}
+                          </p>
+                        )}
+                      </div>
+                      <div
+                        className="text-[8px] uppercase tracking-[0.22em] font-black mt-1.5 ml-[20px]"
+                        style={{ color: "rgba(196,150,42,0.38)" }}
+                      >
+                        Porter
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-end">
+                      <div
+                        className="rounded-l-2xl rounded-br-2xl px-4 py-3 max-w-[88%] text-sm leading-[1.7] font-semibold"
+                        style={{
+                          background: `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne} 60%, ${COLORS.ember}88)`,
+                          color: "#17060b",
+                        }}
+                      >
+                        {msg.text}
+                      </div>
+                      <div
+                        className="text-[8px] uppercase tracking-[0.22em] font-black mt-1.5 mr-1"
+                        style={{ color: "rgba(255,255,255,0.20)" }}
+                      >
+                        You
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* Input */}
+            <div
+              className="p-3 shrink-0"
+              style={{ borderTop: "1px solid rgba(196,150,42,0.10)" }}
+            >
+              <div className="flex gap-2 items-end">
+                <textarea
+                  ref={inputRef}
+                  rows={1}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+                  }}
+                  placeholder={streaming ? "Porter is processing…" : "Enter query…"}
+                  disabled={streaming}
+                  className="flex-1 resize-none rounded-2xl px-4 py-3 text-sm outline-none disabled:opacity-40 transition-all"
+                  style={{
+                    background: "rgba(255,255,255,0.05)",
+                    border: `1px solid ${input.trim() ? "rgba(196,150,42,0.38)" : "rgba(196,150,42,0.18)"}`,
+                    color: "rgba(255,255,255,0.88)",
+                    caretColor: COLORS.champagne,
+                    maxHeight: 120,
+                    lineHeight: 1.6,
+                    fontFamily: "inherit",
+                    transition: "border-color 0.2s",
+                  }}
+                />
+                <button
+                  onClick={() => sendMessage()}
+                  disabled={streaming || !input.trim()}
+                  className="shrink-0 rounded-2xl px-5 py-3 text-[10px] font-black uppercase tracking-[0.16em] transition-all disabled:opacity-30"
+                  style={{
+                    background: input.trim() && !streaming
+                      ? `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne}, ${COLORS.ember})`
+                      : "rgba(255,255,255,0.05)",
+                    color: input.trim() && !streaming ? "#16060a" : "rgba(255,255,255,0.28)",
+                    border: "1px solid rgba(196,150,42,0.18)",
+                  }}
+                >
+                  {streaming ? "···" : "Send"}
+                </button>
+              </div>
+              <p
+                className="text-[8px] uppercase tracking-[0.18em] mt-1.5 ml-1"
+                style={{ color: "rgba(255,255,255,0.16)" }}
+              >
+                Enter to send · Shift+Enter for new line
+              </p>
+            </div>
+          </div>
+
+          {/* Brief memory indicator */}
+          {briefs.length > 0 && (
+            <div
+              className="rounded-2xl px-4 py-3 flex items-center gap-3"
+              style={{
+                background: "rgba(196,150,42,0.06)",
+                border: "1px solid rgba(196,150,42,0.16)",
+              }}
+            >
+              <span style={{ color: COLORS.gold, fontSize: "0.7rem" }}>◆</span>
+              <p className="text-[10px] uppercase tracking-[0.18em] font-black" style={{ color: "rgba(243,213,138,0.54)" }}>
+                Porter has {briefs.length} brief{briefs.length !== 1 ? "s" : ""} in memory —
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {briefs.map((b) => (
+                  <span
+                    key={b.id}
+                    className="rounded-full px-2.5 py-0.5 text-[9px] font-bold border"
+                    style={{
+                      background: "rgba(196,150,42,0.08)",
+                      borderColor: "rgba(196,150,42,0.22)",
+                      color: "#FFD880",
+                    }}
+                  >
+                    {b.country_name}
+                  </span>
+                ))}
               </div>
             </div>
-          ))}
-          <div ref={messagesEndRef} />
+          )}
         </div>
+      )}
 
-        <div className="p-3 border-t border-white/10 flex gap-2">
-          <input
-            ref={inputRef}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-            placeholder={streaming ? "Porter is thinking…" : "Ask Porter anything…"}
-            disabled={streaming}
-            className="flex-1 rounded-2xl px-4 py-3 bg-white/10 border border-white/10 text-white placeholder:text-white/30 outline-none disabled:opacity-50 text-sm"
-          />
-          <button
-            onClick={() => sendMessage()}
-            disabled={streaming || !input.trim()}
-            className="rounded-2xl px-5 py-3 font-black text-sm shrink-0 disabled:opacity-40 transition"
-            style={{ background: `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne}, ${COLORS.ember})`, color: "#16060a" }}
-          >
-            {streaming ? "…" : "Send"}
-          </button>
-        </div>
-      </section>
+      {/* ── DOSSIER TAB ──────────────────────────────────────── */}
+      {tab === "brief" && (
+        <CountryBriefTab
+          briefs={briefs}
+          onBriefSubmitted={(updated) => setBriefs(updated)}
+        />
+      )}
     </main>
   );
 }
 
+function DossierField({ label, children }) {
+  return (
+    <div>
+      <div className="flex items-center gap-3 mb-2">
+        <span
+          className="text-[8px] uppercase tracking-[0.32em] font-black shrink-0"
+          style={{ color: "rgba(196,150,42,0.50)" }}
+        >
+          {label}
+        </span>
+        <div className="flex-1 h-px" style={{ background: "rgba(196,150,42,0.14)" }} />
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function CountryBriefTab({ briefs, onBriefSubmitted }) {
+  const [countryName, setCountryName] = useState("");
+  const [teamMembers, setTeamMembers] = useState("");
+  const [content, setContent] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState("");
+  const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [focusedField, setFocusedField] = useState(null);
+
+  async function handleSubmit() {
+    if (!countryName.trim() || !content.trim()) {
+      setSubmitError("Country name and brief content are required.");
+      return;
+    }
+    setSubmitting(true);
+    setSubmitError("");
+    setSubmitSuccess(false);
+    try {
+      await submitCountryBrief({ countryName, teamMembers, content });
+      const updated = await fetchCountryBriefs();
+      onBriefSubmitted(updated);
+      setSubmitSuccess(true);
+      setCountryName("");
+      setTeamMembers("");
+      setContent("");
+    } catch (err) {
+      setSubmitError(err.message || "Submission failed. Try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function fieldStyle(name) {
+    return {
+      background: "rgba(255,255,255,0.042)",
+      border: `1px solid ${focusedField === name ? "rgba(196,150,42,0.52)" : "rgba(196,150,42,0.16)"}`,
+      boxShadow: focusedField === name ? "0 0 18px rgba(196,150,42,0.10)" : "none",
+      color: "rgba(255,255,255,0.88)",
+      caretColor: COLORS.champagne,
+      transition: "border-color 0.2s, box-shadow 0.2s",
+      outline: "none",
+      fontFamily: "inherit",
+    };
+  }
+
+  const canSubmit = countryName.trim() && content.trim() && !submitting;
+
+  return (
+    <div className="px-5 flex flex-col gap-4">
+      {/* Dossier form */}
+      <div
+        className="relative rounded-[1.8rem] overflow-hidden"
+        style={{ background: "rgba(4,3,1,0.68)", border: "1px solid rgba(196,150,42,0.16)" }}
+      >
+        <div
+          className="h-px"
+          style={{ background: "linear-gradient(90deg, transparent, rgba(196,150,42,0.52), rgba(243,213,138,0.72), rgba(196,150,42,0.52), transparent)" }}
+        />
+
+        <div className="px-5 pt-5 pb-4 flex items-start justify-between gap-4">
+          <div>
+            <p
+              className="text-[8px] uppercase tracking-[0.38em] font-black mb-1"
+              style={{ color: "rgba(196,150,42,0.44)" }}
+            >
+              Global 85 · Intelligence Brief
+            </p>
+            <h2
+              className="text-xl font-black"
+              style={{ fontFamily: "Georgia, serif", color: "rgba(255,255,255,0.88)" }}
+            >
+              Submit Dossier
+            </h2>
+            <p className="text-[11px] text-white/38 mt-1 leading-4">
+              Briefs due July 8 · Porter loads them automatically
+            </p>
+          </div>
+          <div
+            className="shrink-0 w-12 h-12 rounded-full flex items-center justify-center mt-0.5"
+            style={{ border: "2px solid rgba(196,150,42,0.28)", background: "rgba(196,150,42,0.06)" }}
+          >
+            <span style={{ fontSize: "1.3rem" }}>🛎️</span>
+          </div>
+        </div>
+
+        <div className="px-5 pb-5 flex flex-col gap-4">
+          <DossierField label="Destination">
+            <input
+              value={countryName}
+              onChange={(e) => setCountryName(e.target.value)}
+              onFocus={() => setFocusedField("country")}
+              onBlur={() => setFocusedField(null)}
+              placeholder="e.g. Singapore"
+              className="w-full rounded-xl px-4 py-2.5 text-sm placeholder:text-white/28"
+              style={fieldStyle("country")}
+            />
+          </DossierField>
+
+          <DossierField label="Team">
+            <input
+              value={teamMembers}
+              onChange={(e) => setTeamMembers(e.target.value)}
+              onFocus={() => setFocusedField("team")}
+              onBlur={() => setFocusedField(null)}
+              placeholder="e.g. Sarah, Marcus, Priya, Devon"
+              className="w-full rounded-xl px-4 py-2.5 text-sm placeholder:text-white/28"
+              style={fieldStyle("team")}
+            />
+          </DossierField>
+
+          <DossierField label="Intelligence Brief">
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              onFocus={() => setFocusedField("content")}
+              onBlur={() => setFocusedField(null)}
+              placeholder="Why this country. Key business themes. Suggested company visits. Logistics considerations. Cultural angle. Why it makes the strongest anchor city for Cohort 85."
+              rows={8}
+              className="w-full rounded-xl px-4 py-3 text-sm leading-[1.7] resize-none placeholder:text-white/28"
+              style={fieldStyle("content")}
+            />
+            <p
+              className="text-[8px] uppercase tracking-[0.18em] mt-1.5 ml-0.5"
+              style={{ color: "rgba(255,255,255,0.18)" }}
+            >
+              No limit — feeds directly into Porter’s context
+            </p>
+          </DossierField>
+
+          {submitError && (
+            <p className="text-[11px] font-black" style={{ color: "#fca5a5" }}>{submitError}</p>
+          )}
+
+          {submitSuccess && (
+            <div
+              className="rounded-xl px-4 py-3 flex items-center gap-3"
+              style={{ background: "rgba(196,150,42,0.08)", border: "1px solid rgba(196,150,42,0.28)" }}
+            >
+              <span style={{ color: COLORS.gold }}>◆</span>
+              <span className="text-[11px] font-black uppercase tracking-[0.14em]" style={{ color: COLORS.champagneLight }}>
+                Dossier transmitted. Porter has it.
+              </span>
+            </div>
+          )}
+
+          <button
+            onClick={handleSubmit}
+            disabled={!canSubmit}
+            className="w-full rounded-xl py-3 text-[10px] font-black uppercase tracking-[0.20em] transition-all disabled:opacity-35"
+            style={{
+              background: canSubmit
+                ? `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne} 55%, ${COLORS.ember})`
+                : "rgba(255,255,255,0.06)",
+              color: canSubmit ? "#16060a" : "rgba(255,255,255,0.25)",
+              border: "1px solid rgba(196,150,42,0.20)",
+            }}
+          >
+            {submitting ? "Transmitting…" : "Transmit to Porter →"}
+          </button>
+        </div>
+      </div>
+
+      {/* Existing briefs */}
+      {briefs.length > 0 && (
+        <div>
+          <p
+            className="text-[8px] uppercase tracking-[0.32em] font-black mb-3 ml-1"
+            style={{ color: "rgba(196,150,42,0.44)" }}
+          >
+            Porter’s Memory — {briefs.length} Brief{briefs.length !== 1 ? "s" : ""} Loaded
+          </p>
+          <div className="flex flex-col gap-2">
+            {briefs.map((b, i) => (
+              <div
+                key={b.id}
+                className="rounded-2xl p-4"
+                style={{
+                  background: "rgba(255,255,255,0.024)",
+                  border: "1px solid rgba(196,150,42,0.12)",
+                  borderLeft: "3px solid rgba(196,150,42,0.44)",
+                }}
+              >
+                <div className="flex items-center justify-between gap-3 mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="text-[8px] font-black uppercase tracking-[0.20em]"
+                      style={{ color: "rgba(196,150,42,0.44)" }}
+                    >
+                      {String(i + 1).padStart(2, "0")}
+                    </span>
+                    <span className="text-sm font-black text-white/90">{b.country_name}</span>
+                  </div>
+                  <span className="text-[9px] text-white/28 shrink-0">
+                    {new Date(b.submitted_at).toLocaleDateString()}
+                  </span>
+                </div>
+                {b.team_members && (
+                  <p className="text-[10px] uppercase tracking-[0.16em] font-black mb-2" style={{ color: "rgba(255,255,255,0.30)" }}>
+                    {b.team_members}
+                  </p>
+                )}
+                <p className="text-[12px] text-white/48 leading-[1.6] line-clamp-3">{b.content}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {briefs.length === 0 && (
+        <div
+          className="rounded-2xl p-5 text-center"
+          style={{ background: "rgba(255,255,255,0.022)", border: "1px solid rgba(255,255,255,0.06)" }}
+        >
+          <p className="text-[11px] text-white/28 uppercase tracking-[0.18em]">No briefs on file — teams have until July 8</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Detect ties in vote results. Returns array of city names that are tied for the given rank position.
+function getTiedCitiesForPosition(voteMap, position) {
+  const entries = Object.entries(voteMap).sort((a, b) => b[1] - a[1]);
+  if (entries.length <= position) return [];
+  const targetScore = entries[position]?.[1];
+  if (targetScore === undefined) return [];
+  return entries.filter(([, score]) => score === targetScore).map(([name]) => name);
+}
+
+function hasTieAtPosition(voteMap, position) {
+  return getTiedCitiesForPosition(voteMap, position).length > 1;
+}
+
 function VotesPage() {
+  // Mission index 0-5:
+  // 0 = anchor-longlist, 1 = anchor-runoff (optional), 2 = anchor-final
+  // 3 = companion-longlist, 4 = companion-runoff (optional), 5 = companion-final
   const [missionIndex, setMissionIndex] = useState(0);
   const [allVoteCounts, setAllVoteCounts] = useState({});
   const [myVotes, setMyVotes] = useState({});
@@ -1402,7 +2048,9 @@ function VotesPage() {
   const userId = useMemo(() => getOrCreateUserId(), []);
 
   const anchorVotes = allVoteCounts["anchor-longlist"] || {};
+  const anchorRunoffVotes = allVoteCounts["anchor-runoff"] || {};
   const companionVotes = allVoteCounts["companion-longlist"] || {};
+  const companionRunoffVotes = allVoteCounts["companion-runoff"] || {};
 
   function parseVotes(rows) {
     const counts = {};
@@ -1513,16 +2161,50 @@ function VotesPage() {
     if (phase === "companion-final") setCompanionWinner(country);
   }
 
+  function startRunoff(longlistVotes, runoffPhase, nextMissionIndex) {
+    // Clear runoff votes and advance to runoff mission
+    setAllVoteCounts((prev) => {
+      const next = { ...prev };
+      delete next[runoffPhase];
+      return next;
+    });
+    setMyVotes((prev) => {
+      const next = { ...prev };
+      delete next[runoffPhase];
+      return next;
+    });
+    if (supabase) {
+      supabase.from("cohort_votes").delete().eq("cohort_id", COHORT_ID).eq("vote_phase", runoffPhase).then(() => {});
+    }
+    setMissionIndex(nextMissionIndex);
+    pushStateToSupabase({ mission_index: nextMissionIndex });
+  }
+
   async function handleAdvance() {
     if (!activeMission?.canAdvance) return;
 
+    // 0: anchor-longlist → check for tie → go to runoff (1) or skip to final (2)
     if (missionIndex === 0) {
-      setMissionIndex(1);
-      pushStateToSupabase({ mission_index: 1 });
+      const tiedFor2nd = hasTieAtPosition(anchorVotes, 1);
+      const tiedFor1st = hasTieAtPosition(anchorVotes, 0);
+      if (tiedFor2nd || tiedFor1st) {
+        startRunoff(anchorVotes, "anchor-runoff", 1);
+      } else {
+        setMissionIndex(2);
+        pushStateToSupabase({ mission_index: 2 });
+      }
       return;
     }
 
+    // 1: anchor-runoff → go to anchor-final (2)
     if (missionIndex === 1) {
+      setMissionIndex(2);
+      pushStateToSupabase({ mission_index: 2 });
+      return;
+    }
+
+    // 2: anchor-final → lock winner, clear companion votes, go to companion-longlist (3)
+    if (missionIndex === 2) {
       const finalVotes = allVoteCounts["anchor-final"] || {};
       const topName = Object.entries(finalVotes).sort((a, b) => b[1] - a[1])[0]?.[0] || anchorWinner?.name;
       const winner = topName ? getCountryByName(topName) : anchorFinalists[0];
@@ -1531,36 +2213,53 @@ function VotesPage() {
         setAllVoteCounts((prev) => {
           const next = { ...prev };
           delete next["companion-longlist"];
+          delete next["companion-runoff"];
           delete next["companion-final"];
           return next;
         });
         setMyVotes((prev) => {
           const next = { ...prev };
           delete next["companion-longlist"];
+          delete next["companion-runoff"];
           delete next["companion-final"];
           return next;
         });
-        setMissionIndex(2);
-        pushStateToSupabase({ mission_index: 2, anchor_winner: winner.name });
+        setMissionIndex(3);
+        pushStateToSupabase({ mission_index: 3, anchor_winner: winner.name });
         if (supabase) {
           supabase
             .from("cohort_votes")
             .delete()
             .eq("cohort_id", COHORT_ID)
-            .in("vote_phase", ["companion-longlist", "companion-final"])
+            .in("vote_phase", ["companion-longlist", "companion-runoff", "companion-final"])
             .then(() => {});
         }
       }
       return;
     }
 
-    if (missionIndex === 2) {
-      setMissionIndex(3);
-      pushStateToSupabase({ mission_index: 3 });
+    // 3: companion-longlist → check for tie → go to runoff (4) or skip to final (5)
+    if (missionIndex === 3) {
+      const tiedFor2nd = hasTieAtPosition(companionVotes, 1);
+      const tiedFor1st = hasTieAtPosition(companionVotes, 0);
+      if (tiedFor2nd || tiedFor1st) {
+        startRunoff(companionVotes, "companion-runoff", 4);
+      } else {
+        setMissionIndex(5);
+        pushStateToSupabase({ mission_index: 5 });
+      }
       return;
     }
 
-    if (missionIndex === 3) {
+    // 4: companion-runoff → go to companion-final (5)
+    if (missionIndex === 4) {
+      setMissionIndex(5);
+      pushStateToSupabase({ mission_index: 5 });
+      return;
+    }
+
+    // 5: companion-final → lock destination
+    if (missionIndex === 5) {
       const finalVotes = allVoteCounts["companion-final"] || {};
       const topName = Object.entries(finalVotes).sort((a, b) => b[1] - a[1])[0]?.[0] || companionWinner?.name;
       const winner = topName ? getCountryByName(topName) : companionFinalists[0];
@@ -1594,17 +2293,54 @@ function VotesPage() {
     }
   }
 
-  const anchorFinalists = useMemo(() => getTopCountries(ANCHOR_COUNTRIES, anchorVotes, 2), [anchorVotes]);
+  // Compute anchor finalists — accounts for runoff results
+  const anchorFinalists = useMemo(() => {
+    if (missionIndex >= 2 && Object.keys(anchorRunoffVotes).length > 0) {
+      // Runoff happened: top from longlist + runoff winner
+      const longlistTop = Object.entries(anchorVotes).sort((a, b) => b[1] - a[1])[0]?.[0];
+      const runoffWinner = Object.entries(anchorRunoffVotes).sort((a, b) => b[1] - a[1])[0]?.[0];
+      return uniqueByName([longlistTop, runoffWinner].filter(Boolean).map(getCountryByName).filter(Boolean));
+    }
+    return getTopCountries(ANCHOR_COUNTRIES, anchorVotes, 2);
+  }, [anchorVotes, anchorRunoffVotes, missionIndex]);
+
+  // Compute anchor runoff candidates (cities tied for 1st or 2nd in longlist)
+  const anchorRunoffCandidates = useMemo(() => {
+    const entries = Object.entries(anchorVotes).sort((a, b) => b[1] - a[1]);
+    if (entries.length < 2) return entries.map(([name]) => getCountryByName(name)).filter(Boolean);
+    const secondScore = entries[1]?.[1];
+    const firstScore = entries[0]?.[1];
+    // If tie for 1st, include all tied for 1st; otherwise include all tied for 2nd
+    const tiedScore = firstScore === secondScore ? firstScore : secondScore;
+    const relevantNames = entries.filter(([, score]) => score === tiedScore).map(([name]) => name);
+    return relevantNames.map(getCountryByName).filter(Boolean);
+  }, [anchorVotes]);
 
   const companionOptions = useMemo(
     () => buildCompanionOptions(anchorWinner?.name || anchorFinalists[0]?.name || "Santiago"),
     [anchorFinalists, anchorWinner]
   );
 
-  const companionFinalists = useMemo(
-    () => getTopCountries(companionOptions, companionVotes, 2),
-    [companionOptions, companionVotes]
-  );
+  // Compute companion finalists — accounts for runoff results
+  const companionFinalists = useMemo(() => {
+    if (missionIndex >= 5 && Object.keys(companionRunoffVotes).length > 0) {
+      const longlistTop = Object.entries(companionVotes).sort((a, b) => b[1] - a[1])[0]?.[0];
+      const runoffWinner = Object.entries(companionRunoffVotes).sort((a, b) => b[1] - a[1])[0]?.[0];
+      return uniqueByName([longlistTop, runoffWinner].filter(Boolean).map(getCountryByName).filter(Boolean));
+    }
+    return getTopCountries(companionOptions, companionVotes, 2);
+  }, [companionOptions, companionVotes, companionRunoffVotes, missionIndex]);
+
+  // Compute companion runoff candidates
+  const companionRunoffCandidates = useMemo(() => {
+    const entries = Object.entries(companionVotes).sort((a, b) => b[1] - a[1]);
+    if (entries.length < 2) return entries.map(([name]) => getCountryByName(name)).filter(Boolean);
+    const secondScore = entries[1]?.[1];
+    const firstScore = entries[0]?.[1];
+    const tiedScore = firstScore === secondScore ? firstScore : secondScore;
+    const relevantNames = entries.filter(([, score]) => score === tiedScore).map(([name]) => name);
+    return relevantNames.map(getCountryByName).filter(Boolean);
+  }, [companionVotes]);
 
   const missions = useMemo(
     () => [
@@ -1612,31 +2348,47 @@ function VotesPage() {
         id: "anchor-longlist",
         eyebrow: "Vote 01",
         title: "Vote for City A",
-        shortTitle: "List A",
+        shortTitle: "City A",
         mode: "anchor-longlist",
         status: missionIndex === 0 ? "active" : "complete",
-        instruction: "Pick the city that should anchor the Global 85 trip. The two most-voted advance to Vote 02.",
+        instruction: "Pick the city that should anchor the Global 85 trip. The two most-voted advance. If there's a close call, a runoff vote runs on the spot.",
         options: ANCHOR_COUNTRIES,
         votes: anchorVotes,
         selectedName: myVotes["anchor-longlist"],
-        voteLabel: "Cast First Vote",
-        nextLabel: "Advance Top Two",
+        voteLabel: "Cast Vote",
+        nextLabel: hasTieAtPosition(anchorVotes, 0) || hasTieAtPosition(anchorVotes, 1) ? "Tied — Start Runoff" : "Advance Top Two",
         canAdvance: Object.keys(anchorVotes).length > 0,
         finalistNames: anchorFinalists.map((c) => c.name),
+      },
+      {
+        id: "anchor-runoff",
+        eyebrow: "Runoff A",
+        title: "City A Tiebreaker",
+        shortTitle: "Runoff A",
+        mode: "anchor-runoff",
+        status: missionIndex < 1 ? "locked" : missionIndex === 1 ? "active" : "complete",
+        instruction: "Tied cities from Vote 01 — one more vote to break the tie. Winner joins the top city to form the final two.",
+        options: anchorRunoffCandidates.length ? anchorRunoffCandidates : ANCHOR_COUNTRIES.slice(0, 2),
+        votes: anchorRunoffVotes,
+        selectedName: myVotes["anchor-runoff"],
+        voteLabel: "Break the Tie",
+        nextLabel: "Confirm Finalists",
+        canAdvance: Object.keys(anchorRunoffVotes).length > 0,
+        finalistNames: [],
       },
       {
         id: "anchor-final",
         eyebrow: "Vote 02",
         title: "Lock in City A",
-        shortTitle: "List A Final",
+        shortTitle: "City A Final",
         mode: "anchor-final",
-        status: missionIndex < 1 ? "locked" : missionIndex === 1 ? "active" : "complete",
-        instruction: "Top two from Vote 01 head-to-head. The winner becomes City A and unlocks List B.",
+        status: missionIndex < 2 ? "locked" : missionIndex === 2 ? "active" : "complete",
+        instruction: "Top two from Vote 01 head-to-head. The winner becomes City A and unlocks the City B list.",
         options: anchorFinalists.length ? anchorFinalists : ANCHOR_COUNTRIES.slice(0, 2),
         votes: allVoteCounts["anchor-final"] || {},
         selectedName: myVotes["anchor-final"] || anchorWinner?.name,
         voteLabel: "Lock City A",
-        nextLabel: "Generate List B",
+        nextLabel: "Generate City B List",
         canAdvance: Object.keys(allVoteCounts["anchor-final"] || {}).length > 0 || Boolean(anchorWinner),
         finalistNames: anchorFinalists.map((c) => c.name),
       },
@@ -1644,27 +2396,43 @@ function VotesPage() {
         id: "companion-longlist",
         eyebrow: "Vote 03",
         title: "Vote for City B",
-        shortTitle: "List B",
+        shortTitle: "City B",
         mode: "companion-longlist",
-        status: missionIndex < 2 ? "locked" : missionIndex === 2 ? "active" : "complete",
+        status: missionIndex < 3 ? "locked" : missionIndex === 3 ? "active" : "complete",
         instruction: anchorWinner
-          ? `Porter built List B around ${anchorWinner.name} — matched on flight logic, cost balance, cultural contrast, and trip pacing.`
-          : "List B will be generated once City A is locked.",
+          ? `Porter built the City B list around ${anchorWinner.name} — matched on flight logic, cost balance, cultural contrast, and trip pacing.`
+          : "City B list will be generated once City A is locked.",
         options: companionOptions,
         votes: companionVotes,
         selectedName: myVotes["companion-longlist"],
         voteLabel: "Cast Vote",
-        nextLabel: "Advance Top Two",
+        nextLabel: hasTieAtPosition(companionVotes, 0) || hasTieAtPosition(companionVotes, 1) ? "Tied — Start Runoff" : "Advance Top Two",
         canAdvance: Object.keys(companionVotes).length > 0,
         finalistNames: companionFinalists.map((c) => c.name),
+      },
+      {
+        id: "companion-runoff",
+        eyebrow: "Runoff B",
+        title: "City B Tiebreaker",
+        shortTitle: "Runoff B",
+        mode: "companion-runoff",
+        status: missionIndex < 4 ? "locked" : missionIndex === 4 ? "active" : "complete",
+        instruction: "Tied cities from Vote 03 — one more vote to break the tie. Winner joins the top city to form the final two.",
+        options: companionRunoffCandidates.length ? companionRunoffCandidates : companionOptions.slice(0, 2),
+        votes: companionRunoffVotes,
+        selectedName: myVotes["companion-runoff"],
+        voteLabel: "Break the Tie",
+        nextLabel: "Confirm Finalists",
+        canAdvance: Object.keys(companionRunoffVotes).length > 0,
+        finalistNames: [],
       },
       {
         id: "companion-final",
         eyebrow: "Vote 04",
         title: "Lock in City B",
-        shortTitle: "List B Final",
+        shortTitle: "City B Final",
         mode: "companion-final",
-        status: missionIndex < 3 ? "locked" : "active",
+        status: missionIndex < 5 ? "locked" : "active",
         instruction: "Top two from Vote 03 head-to-head. The winner becomes City B — destination locked.",
         options: companionFinalists.length ? companionFinalists : companionOptions.slice(0, 2),
         votes: allVoteCounts["companion-final"] || {},
@@ -1675,10 +2443,14 @@ function VotesPage() {
         finalistNames: companionFinalists.map((c) => c.name),
       },
     ],
-    [missionIndex, anchorVotes, anchorFinalists, companionOptions, companionVotes, companionFinalists, anchorWinner, companionWinner, myVotes, allVoteCounts]
+    [
+      missionIndex, anchorVotes, anchorRunoffVotes, anchorFinalists, anchorRunoffCandidates,
+      companionOptions, companionVotes, companionRunoffVotes, companionFinalists, companionRunoffCandidates,
+      anchorWinner, companionWinner, myVotes, allVoteCounts,
+    ]
   );
 
-  const activeMission = missions[missionIndex];
+  const activeMission = missions[Math.min(missionIndex, missions.length - 1)];
 
   return (
     <main className="fixed inset-0 z-[999] overflow-hidden">
@@ -1978,7 +2750,10 @@ function DestinationChamber({
   }, [activeCountry, countries]);
 
   const arcs = useMemo(() => {
-    if (activeMission.mode === "anchor-longlist" || activeMission.mode === "anchor-final") {
+    const mode = activeMission.mode;
+    const isAnchor = mode === "anchor-longlist" || mode === "anchor-runoff" || mode === "anchor-final";
+    const isCompanion = mode === "companion-longlist" || mode === "companion-runoff" || mode === "companion-final";
+    if (isAnchor) {
       const source = activeCountry;
       if (!source) return [];
       const bNames = CITY_B_MAP[source.name] || [];
@@ -1987,7 +2762,7 @@ function DestinationChamber({
         .filter(Boolean)
         .map((bCity) => ({ startLat: source.lat, startLng: source.lng, endLat: bCity.lat, endLng: bCity.lng, label: bCity.name }));
     }
-    if (anchorWinner && (activeMission.mode === "companion-longlist" || activeMission.mode === "companion-final")) {
+    if (anchorWinner && isCompanion) {
       return activeMission.options.map((bCity) => ({
         startLat: anchorWinner.lat, startLng: anchorWinner.lng, endLat: bCity.lat, endLng: bCity.lng, label: bCity.name,
       }));
@@ -2912,7 +3687,7 @@ function FloatingIntelPanel({
           );
         })()}
 
-        {(mission.mode === "anchor-longlist" || mission.mode === "anchor-final") && CITY_B_MAP[country.name]?.length > 0 && (
+        {(mission.mode === "anchor-longlist" || mission.mode === "anchor-runoff" || mission.mode === "anchor-final") && CITY_B_MAP[country.name]?.length > 0 && (
           <div className="mt-4 rounded-3xl border border-white/10 bg-black/30 p-4">
             <p className="text-xs uppercase tracking-[0.18em] font-black" style={{ color: COLORS.champagne }}>
               City B options
@@ -3112,7 +3887,7 @@ function DeepDivePanel({ country, mission, selected, onClose, onVote }) {
             </div>
           )}
 
-          {(mission.mode === "anchor-longlist" || mission.mode === "anchor-final") && CITY_B_MAP[country.name]?.length > 0 && (
+          {(mission.mode === "anchor-longlist" || mission.mode === "anchor-runoff" || mission.mode === "anchor-final") && CITY_B_MAP[country.name]?.length > 0 && (
             <div>
               <div className="text-[10px] uppercase tracking-[0.26em] font-black mb-3" style={{ color: "#FFD880" }}>
                 City B add-on options

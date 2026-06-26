@@ -262,7 +262,42 @@ HOW TO USE THIS DATA:
 - Seoul and Ulaanbaatar have been visited 3 times each; Kigali and Kampala 3 times each
 - Singapore, Lisbon, Istanbul, and Dubai each have 2 prior trips
 - When asked about a destination, note whether prior cohorts visited it and what sectors they accessed
-- Always clarify: prior visit history shows what is possible, not what is confirmed for Cohort 85`;
+- Always clarify: prior visit history shows what is possible, not what is confirmed for Cohort 85
+
+COUNTRY BRIEF PROCESS:
+On June 26, 2026, Cohort 85 will be assigned teams and each team will be assigned a specific country to research and present. Each team submits a country brief to Porter by July 8, 2026. These briefs are the primary research product for each destination on the City A list.
+
+When country briefs have been submitted, Porter has access to them (they will appear in the SUBMITTED COUNTRY BRIEFS section below, if any exist). Porter should reference the briefs when relevant, and treat them as the cohort's own research — not external data. Credit the team when referencing their brief.
+
+CITY A VOTE SESSION — JULY 11, 2026:
+The in-class session runs:
+- 30 minutes of presentation per country (each team presents their assigned country)
+- 10 minutes of Q&A
+- 10 minute break
+- Anonymous vote through Porter (each cohort member votes)
+- Porter tallies votes and announces the winner and 2nd place
+- If there is a close call for 1st or 2nd place, a runoff vote happens immediately
+- Up to 2 cities advance to the City A Final vote (round 2)
+- Round 2 is a head-to-head vote between the top 2 cities
+- The winner becomes City A
+
+CITY B VOTE SESSION — JULY 18, 2026:
+Same format as City A. City B briefs are due July 15, 2026.
+
+VOTING NOTES:
+- All votes are anonymous — Porter sees vote totals, not who voted for what
+- Porter announces results after each round
+- For close races (tied or within 1 vote), Porter will flag it and the session facilitator will initiate a runoff
+- Porter should help students understand the voting process if asked`;
+
+export function buildSystemWithBriefs(briefs) {
+  if (!briefs || briefs.length === 0) return SYSTEM;
+  const briefsSection = briefs.map((b) => {
+    const team = b.team_members ? ` (Team: ${b.team_members})` : "";
+    return `COUNTRY: ${b.country_name}${team}\nSubmitted: ${new Date(b.submitted_at).toLocaleDateString()}\n\n${b.content}`;
+  }).join("\n\n---\n\n");
+  return `${SYSTEM}\n\nSUBMITTED COUNTRY BRIEFS (${briefs.length} brief${briefs.length !== 1 ? "s" : ""} received so far):\n\n${briefsSection}`;
+}
 
 
 export default async function handler(req, res) {
@@ -282,11 +317,13 @@ export default async function handler(req, res) {
     });
   }
 
-  const { messages } = req.body || {};
+  const { messages, briefs } = req.body || {};
 
   if (!Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: "messages array required" });
   }
+
+  const systemPrompt = buildSystemWithBriefs(Array.isArray(briefs) ? briefs : []);
 
   res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache, no-transform");
@@ -299,7 +336,7 @@ export default async function handler(req, res) {
       model: process.env.ANTHROPIC_MODEL || "claude-sonnet-4-6",
       max_tokens: 1024,
       temperature: 0.65,
-      system: SYSTEM,
+      system: systemPrompt,
       messages: messages.map((m) => ({
         role: m.role === "assistant" ? "assistant" : "user",
         content: String(m.text || m.content || ""),
