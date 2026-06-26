@@ -3064,7 +3064,7 @@ function DestinationChamber({
             countries={countries}
             activeCountry={activeCountry}
             selectedName={selectedName}
-            finalistNames={activeMission.finalistNames}
+            finalistNames={activeMission.status === "active" ? [] : activeMission.finalistNames}
             onSelectCountry={handlePointClick}
             onPorterPick={onPorterPick}
             onAdvance={onAdvance}
@@ -3099,7 +3099,7 @@ function DestinationChamber({
             countries={countries}
             activeCountry={activeCountry}
             selectedName={selectedName}
-            finalistNames={activeMission.finalistNames}
+            finalistNames={activeMission.status === "active" ? [] : activeMission.finalistNames}
             onSelectCountry={handlePointClick}
             onPorterPick={onPorterPick}
             onAdvance={onAdvance}
