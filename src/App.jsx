@@ -2321,27 +2321,25 @@ const companionOptions = useMemo(
 [anchorFinalists, anchorWinner]
 );
 
-// Compute companion finalists — accounts for runoff results
-const companionFinalists = useMemo(() => {
-if (missionIndex >= 5 && Object.keys(companionRunoffVotes).length > 0) {
-const sortedLonglist = Object.entries(companionVotes).sort((a, b) => b[1] - a[1]);
-const firstScore = sortedLonglist[0]?.[1];
-const secondScore = sortedLonglist[1]?.[1];
-const runoffWinner = Object.entries(companionRunoffVotes).sort((a, b) => b[1] - a[1])[0]?.[0];
+  // Compute companion finalists — accounts for runoff results
+  const companionFinalists = useMemo(() => {
+    if (missionIndex >= 5 && Object.keys(companionRunoffVotes).length > 0) {
+      const sortedLonglist = Object.entries(companionVotes).sort((a, b) => b[1] - a[1]);
+      const firstScore = sortedLonglist[0]?.[1];
+      const secondScore = sortedLonglist[1]?.[1];
+      const runoffWinner = Object.entries(companionRunoffVotes).sort((a, b) => b[1] - a[1])[0]?.[0];
 
-```
-  if (firstScore === secondScore) {
-    const runoffNames = sortedLonglist.filter(([, s]) => s === firstScore).map(([n]) => n);
-    const autoAdvance = sortedLonglist.find(([name]) => !runoffNames.includes(name))?.[0];
-    return uniqueByName([runoffWinner, autoAdvance].filter(Boolean).map(getCountryByName).filter(Boolean));
-  }
+      if (firstScore === secondScore) {
+        const runoffNames = sortedLonglist.filter(([, s]) => s === firstScore).map(([n]) => n);
+        const autoAdvance = sortedLonglist.find(([name]) => !runoffNames.includes(name))?.[0];
+        return uniqueByName([runoffWinner, autoAdvance].filter(Boolean).map(getCountryByName).filter(Boolean));
+      }
 
-  return uniqueByName([sortedLonglist[0]?.[0], runoffWinner].filter(Boolean).map(getCountryByName).filter(Boolean));
-}
+      return uniqueByName([sortedLonglist[0]?.[0], runoffWinner].filter(Boolean).map(getCountryByName).filter(Boolean));
+    }
 
-return getTopCountries(companionOptions, companionVotes, 2);
-
-}, [companionOptions, companionVotes, companionRunoffVotes, missionIndex]);
+    return getTopCountries(companionOptions, companionVotes, 2);
+  }, [companionOptions, companionVotes, companionRunoffVotes, missionIndex]);
 
 // Compute companion runoff candidates
 const companionRunoffCandidates = useMemo(() => {
