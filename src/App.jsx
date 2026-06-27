@@ -2206,26 +2206,6 @@ async function load() {
       .subscribe();
 
     return () => supabase.removeChannel(channel);
-  }, [userId]);
-          setMissionIndex(s.mission_index ?? 0);
-
-          if (s.anchor_winner) {
-            const aw = getCountryByName(s.anchor_winner);
-            if (aw) setAnchorWinner(aw);
-          }
-
-          if (s.companion_winner) {
-            const cw = getCountryByName(s.companion_winner);
-            if (cw) {
-              setCompanionWinner(cw);
-              setShowCelebration(true);
-            }
-          }
-        }
-      )
-      .subscribe();
-
-    return () => supabase.removeChannel(channel);
         if (aw) setAnchorWinner(aw);
       }
 
