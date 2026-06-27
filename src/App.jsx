@@ -3135,7 +3135,7 @@ function DestinationChamber({
             arcStartLng={(d) => d.startLng}
             arcEndLat={(d) => d.endLat}
             arcEndLng={(d) => d.endLng}
-            arcColor={() => `${COLORS.champagne}99`}
+            arcColor={() => COLORS.champagne + "99"}
             arcAltitude={0.25}
             arcStroke={0.35}
             arcDashLength={0.45}
