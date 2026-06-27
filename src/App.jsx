@@ -2916,7 +2916,7 @@ function DestinationChamber({
   }
 
   return (
-    <section className="relative h-screen w-screen overflow-hidden text-white bg-[#080700]">
+    <section className="relative w-screen overflow-hidden text-white bg-[#080700]" style={{ height: "100dvh" }}>
       <ChamberCss />
       <RoomBackground active={Boolean(activeCountry)} />
 
