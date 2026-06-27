@@ -2418,8 +2418,8 @@ shortTitle: "City B",
 mode: "companion-longlist",
 status: missionIndex < 3 ? "locked" : missionIndex === 3 ? "active" : "complete",
 instruction: anchorWinner
-? `Porter built the City B list around ${anchorWinner.name} — matched on flight logic, cost balance, cultural contrast, and trip pacing.`
-: "City B list will be generated once City A is locked.",
+  ? "Porter built the City B list around " + anchorWinner.name + " — matched on flight logic, cost balance, cultural contrast, and trip pacing."
+  : "City B list will be generated once City A is locked.",
 options: companionOptions,
 votes: companionVotes,
 selectedName: myVotes["companion-longlist"],
