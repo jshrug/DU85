@@ -2520,7 +2520,6 @@ if (supabase) {
 
 if (phase === "anchor-final") setAnchorWinner(country);
 if (phase === "companion-final") setCompanionWinner(country);
-```
 
 }
 
@@ -2637,8 +2636,6 @@ if (!activeMission?.canAdvance) return;
   companionWinner,
   allVoteCounts,
 ]
-```
-
 );
 
 // Auto-advance when all COHORT_SIZE votes are in for the active phase.
