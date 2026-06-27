@@ -2116,13 +2116,102 @@ if (!counts[v.vote_phase]) counts[v.vote_phase] = {};
 counts[v.vote_phase][v.country_name] = (counts[v.vote_phase][v.country_name] || 0) + 1;
 if (v.user_id === userId) mine[v.vote_phase] = v.country_name;
 });
-return { counts, mine };
-}
+  useEffect(() => {
+    if (!supabase) return;
 
-useEffect(() => {
-if (!supabase) return;
+    async function load() {
+      const [{ data: votes }, { data: state }] = await Promise.all([
+        supabase
+          .from("cohort_votes")
+          .select("vote_phase,country_name,user_id")
+          .eq("cohort_id", COHORT_ID),
+        supabase
+          .from("cohort_state")
+          .select("*")
+          .eq("cohort_id", COHORT_ID)
+          .maybeSingle(),
+      ]);
 
-async function load() {
+      if (votes) {
+        const { counts, mine } = parseVotes(votes);
+        setAllVoteCounts(counts);
+        setMyVotes(mine);
+      }
+
+      if (state) {
+        setMissionIndex(state.mission_index ?? 0);
+
+        if (state.anchor_winner) {
+          const aw = getCountryByName(state.anchor_winner);
+          if (aw) setAnchorWinner(aw);
+        }
+
+        if (state.companion_winner) {
+          const cw = getCountryByName(state.companion_winner);
+          if (cw) setCompanionWinner(cw);
+        }
+      }
+    }
+
+    load();
+
+    const channel = supabase
+      .channel("cohort-" + COHORT_ID)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "cohort_votes",
+          filter: "cohort_id=eq." + COHORT_ID,
+        },
+        async () => {
+          const { data: votes } = await supabase
+            .from("cohort_votes")
+            .select("vote_phase,country_name,user_id")
+            .eq("cohort_id", COHORT_ID);
+
+          if (votes) {
+            const { counts, mine } = parseVotes(votes);
+            setAllVoteCounts(counts);
+            setMyVotes(mine);
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "cohort_state",
+          filter: "cohort_id=eq." + COHORT_ID,
+        },
+        (payload) => {
+          const s = payload.new;
+          if (!s) return;
+
+          setMissionIndex(s.mission_index ?? 0);
+
+          if (s.anchor_winner) {
+            const aw = getCountryByName(s.anchor_winner);
+            if (aw) setAnchorWinner(aw);
+          }
+
+          if (s.companion_winner) {
+            const cw = getCountryByName(s.companion_winner);
+            if (cw) {
+              setCompanionWinner(cw);
+              setShowCelebration(true);
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [userId]);
   const [{ data: votes }, { data: state }] = await Promise.all([
     supabase.from("cohort_votes").select("vote_phase,country_name,user_id").eq("cohort_id", COHORT_ID),
     supabase.from("cohort_state").select("*").eq("cohort_id", COHORT_ID).maybeSingle(),
