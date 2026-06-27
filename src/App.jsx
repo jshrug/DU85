@@ -2161,7 +2161,7 @@ async function load() {
           event: "*",
           schema: "public",
           table: "cohort_votes",
-          filter: `cohort_id=eq.${COHORT_ID}`,
+          filter: "cohort_id=eq." + COHORT_ID,
         },
         async () => {
           const { data: votes } = await supabase
