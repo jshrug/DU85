@@ -2336,7 +2336,6 @@ const runoffWinner = Object.entries(anchorRunoffVotes).sort((a, b) => b[1] - a[1
 }
 
 return getTopCountries(ANCHOR_COUNTRIES, anchorVotes, 2);
-```
 
 }, [anchorVotes, anchorRunoffVotes, missionIndex]);
 
@@ -2345,7 +2344,6 @@ const anchorRunoffCandidates = useMemo(() => {
 const entries = Object.entries(anchorVotes).sort((a, b) => b[1] - a[1]);
 if (entries.length < 2) return entries.map(([name]) => getCountryByName(name)).filter(Boolean);
 
-```
 const secondScore = entries[1]?.[1];
 const firstScore = entries[0]?.[1];
 
