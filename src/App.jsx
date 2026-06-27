@@ -2340,7 +2340,6 @@ const runoffWinner = Object.entries(companionRunoffVotes).sort((a, b) => b[1] - 
 }
 
 return getTopCountries(companionOptions, companionVotes, 2);
-```
 
 }, [companionOptions, companionVotes, companionRunoffVotes, missionIndex]);
 
