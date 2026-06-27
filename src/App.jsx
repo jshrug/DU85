@@ -2154,7 +2154,7 @@ async function load() {
     load();
 
     const channel = supabase
-      .channel(`cohort-${COHORT_ID}`)
+            .channel("cohort-" + COHORT_ID)
       .on(
         "postgres_changes",
         {
