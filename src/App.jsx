@@ -2092,44 +2092,40 @@ function hasTieAtPosition(voteMap, position) {
 }
 
 function VotesPage() {
-// Mission index 0-5:
-// 0 = anchor-longlist, 1 = anchor-runoff (optional), 2 = anchor-final
-// 3 = companion-longlist, 4 = companion-runoff (optional), 5 = companion-final
-const [missionIndex, setMissionIndex] = useState(0);
-const [allVoteCounts, setAllVoteCounts] = useState({});
-const [myVotes, setMyVotes] = useState({});
-const [anchorWinner, setAnchorWinner] = useState(null);
-const [companionWinner, setCompanionWinner] = useState(null);
-const [showCelebration, setShowCelebration] = useState(false);
-const userId = useMemo(() => getOrCreateUserId(), []);
+  // Mission index 0-5:
+  // 0 = anchor-longlist, 1 = anchor-runoff (optional), 2 = anchor-final
+  // 3 = companion-longlist, 4 = companion-runoff (optional), 5 = companion-final
+  const [missionIndex, setMissionIndex] = useState(0);
+  const [allVoteCounts, setAllVoteCounts] = useState({});
+  const [myVotes, setMyVotes] = useState({});
+  const [anchorWinner, setAnchorWinner] = useState(null);
+  const [companionWinner, setCompanionWinner] = useState(null);
+  const [showCelebration, setShowCelebration] = useState(false);
+  const userId = useMemo(() => getOrCreateUserId(), []);
 
-const anchorVotes = allVoteCounts["anchor-longlist"] || {};
-const anchorRunoffVotes = allVoteCounts["anchor-runoff"] || {};
-const companionVotes = allVoteCounts["companion-longlist"] || {};
-const companionRunoffVotes = allVoteCounts["companion-runoff"] || {};
+  const anchorVotes = allVoteCounts["anchor-longlist"] || {};
+  const anchorRunoffVotes = allVoteCounts["anchor-runoff"] || {};
+  const companionVotes = allVoteCounts["companion-longlist"] || {};
+  const companionRunoffVotes = allVoteCounts["companion-runoff"] || {};
 
-function parseVotes(rows) {
-const counts = {};
-const mine = {};
-rows.forEach((v) => {
-if (!counts[v.vote_phase]) counts[v.vote_phase] = {};
-counts[v.vote_phase][v.country_name] = (counts[v.vote_phase][v.country_name] || 0) + 1;
-if (v.user_id === userId) mine[v.vote_phase] = v.country_name;
-});
+  function parseVotes(rows) {
+    const counts = {};
+    const mine = {};
+    rows.forEach((v) => {
+      if (!counts[v.vote_phase]) counts[v.vote_phase] = {};
+      counts[v.vote_phase][v.country_name] = (counts[v.vote_phase][v.country_name] || 0) + 1;
+      if (v.user_id === userId) mine[v.vote_phase] = v.country_name;
+    });
+    return { counts, mine };
+  }
+
   useEffect(() => {
     if (!supabase) return;
 
     async function load() {
       const [{ data: votes }, { data: state }] = await Promise.all([
-        supabase
-          .from("cohort_votes")
-          .select("vote_phase,country_name,user_id")
-          .eq("cohort_id", COHORT_ID),
-        supabase
-          .from("cohort_state")
-          .select("*")
-          .eq("cohort_id", COHORT_ID)
-          .maybeSingle(),
+        supabase.from("cohort_votes").select("vote_phase,country_name,user_id").eq("cohort_id", COHORT_ID),
+        supabase.from("cohort_state").select("*").eq("cohort_id", COHORT_ID).maybeSingle(),
       ]);
 
       if (votes) {
@@ -2137,40 +2133,27 @@ if (v.user_id === userId) mine[v.vote_phase] = v.country_name;
         setAllVoteCounts(counts);
         setMyVotes(mine);
       }
-
       if (state) {
         setMissionIndex(state.mission_index ?? 0);
-
-        if (state.anchor_winner) {
-          const aw = getCountryByName(state.anchor_winner);
-          if (aw) setAnchorWinner(aw);
-        }
-
+        if (state.anchor_winner) setAnchorWinner(getCountryByName(state.anchor_winner));
         if (state.companion_winner) {
           const cw = getCountryByName(state.companion_winner);
           if (cw) setCompanionWinner(cw);
         }
       }
     }
-
     load();
 
     const channel = supabase
-      .channel("cohort-" + COHORT_ID)
+      .channel(`cohort-${COHORT_ID}`)
       .on(
         "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "cohort_votes",
-          filter: "cohort_id=eq." + COHORT_ID,
-        },
+        { event: "*", schema: "public", table: "cohort_votes", filter: `cohort_id=eq.${COHORT_ID}` },
         async () => {
           const { data: votes } = await supabase
             .from("cohort_votes")
             .select("vote_phase,country_name,user_id")
             .eq("cohort_id", COHORT_ID);
-
           if (votes) {
             const { counts, mine } = parseVotes(votes);
             setAllVoteCounts(counts);
@@ -2180,23 +2163,12 @@ if (v.user_id === userId) mine[v.vote_phase] = v.country_name;
       )
       .on(
         "postgres_changes",
-        {
-          event: "*",
-          schema: "public",
-          table: "cohort_state",
-          filter: "cohort_id=eq." + COHORT_ID,
-        },
+        { event: "*", schema: "public", table: "cohort_state", filter: `cohort_id=eq.${COHORT_ID}` },
         (payload) => {
           const s = payload.new;
           if (!s) return;
-
           setMissionIndex(s.mission_index ?? 0);
-
-          if (s.anchor_winner) {
-            const aw = getCountryByName(s.anchor_winner);
-            if (aw) setAnchorWinner(aw);
-          }
-
+          if (s.anchor_winner) setAnchorWinner(getCountryByName(s.anchor_winner));
           if (s.companion_winner) {
             const cw = getCountryByName(s.companion_winner);
             if (cw) {
@@ -2208,118 +2180,225 @@ if (v.user_id === userId) mine[v.vote_phase] = v.country_name;
       )
       .subscribe();
 
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => supabase.removeChannel(channel);
   }, [userId]);
-  
-async function pushStateToSupabase(patch) {
-if (!supabase) return;
 
-await supabase
-  .from("cohort_state")
-  .upsert(
-    {
-      cohort_id: COHORT_ID,
-      ...patch,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "cohort_id" }
-  );
-
-}
-
-function startRunoff(longlistVotes, runoffPhase, nextMissionIndex) {
-// Clear runoff votes and advance to runoff mission
-setAllVoteCounts((prev) => {
-const next = { ...prev };
-delete next[runoffPhase];
-return next;
-});
-
-setMyVotes((prev) => {
-  const next = { ...prev };
-  delete next[runoffPhase];
-  return next;
-});
-
-if (supabase) {
-  supabase
-    .from("cohort_votes")
-    .delete()
-    .eq("cohort_id", COHORT_ID)
-    .eq("vote_phase", runoffPhase)
-    .then(() => {});
-}
-
-setMissionIndex(nextMissionIndex);
-pushStateToSupabase({ mission_index: nextMissionIndex });
-
-}
-
-function handleMissionJump(index) {
-if (index <= missionIndex) setMissionIndex(index);
-}
-
-function resetProtocol() {
-setMissionIndex(0);
-setAllVoteCounts({});
-setMyVotes({});
-setAnchorWinner(null);
-setCompanionWinner(null);
-setShowCelebration(false);
-
-if (supabase) {
-  supabase.from("cohort_votes").delete().eq("cohort_id", COHORT_ID).then(() => {});
-  pushStateToSupabase({ mission_index: 0, anchor_winner: null, companion_winner: null });
-}
-
-}
-
-// Compute anchor finalists — accounts for runoff results
-const anchorFinalists = useMemo(() => {
-if (missionIndex >= 2 && Object.keys(anchorRunoffVotes).length > 0) {
-const sortedLonglist = Object.entries(anchorVotes).sort((a, b) => b[1] - a[1]);
-const firstScore = sortedLonglist[0]?.[1];
-const secondScore = sortedLonglist[1]?.[1];
-const runoffWinner = Object.entries(anchorRunoffVotes).sort((a, b) => b[1] - a[1])[0]?.[0];
-
-  if (firstScore === secondScore) {
-    // Tie for 1st: runoff winner + the highest-scoring city not in the runoff
-    const runoffNames = sortedLonglist.filter(([, s]) => s === firstScore).map(([n]) => n);
-    const autoAdvance = sortedLonglist.find(([name]) => !runoffNames.includes(name))?.[0];
-    return uniqueByName([runoffWinner, autoAdvance].filter(Boolean).map(getCountryByName).filter(Boolean));
+  async function pushStateToSupabase(patch) {
+    if (!supabase) return;
+    await supabase
+      .from("cohort_state")
+      .upsert({ cohort_id: COHORT_ID, ...patch, updated_at: new Date().toISOString() }, { onConflict: "cohort_id" });
   }
 
-  // Tie for 2nd: unchallenged longlist leader + runoff winner
-  return uniqueByName([sortedLonglist[0]?.[0], runoffWinner].filter(Boolean).map(getCountryByName).filter(Boolean));
-}
+  function handleVote(country) {
+    const phase = activeMission?.mode;
+    if (!phase || activeMission.status !== "active") return;
 
-return getTopCountries(ANCHOR_COUNTRIES, anchorVotes, 2);
+    const prevVote = myVotes[phase];
+    setMyVotes((prev) => ({ ...prev, [phase]: country.name }));
+    setAllVoteCounts((prev) => {
+      const pv = { ...(prev[phase] || {}) };
+      if (prevVote && pv[prevVote]) pv[prevVote] = Math.max(0, pv[prevVote] - 1);
+      pv[country.name] = (pv[country.name] || 0) + 1;
+      return { ...prev, [phase]: pv };
+    });
 
-}, [anchorVotes, anchorRunoffVotes, missionIndex]);
+    if (supabase) {
+      supabase
+        .from("cohort_votes")
+        .upsert(
+          { cohort_id: COHORT_ID, vote_phase: phase, country_name: country.name, user_id: userId },
+          { onConflict: "cohort_id,vote_phase,user_id" }
+        )
+        .then(() => {});
+    }
 
-// Compute anchor runoff candidates: cities tied for 1st or 2nd in longlist
-const anchorRunoffCandidates = useMemo(() => {
-const entries = Object.entries(anchorVotes).sort((a, b) => b[1] - a[1]);
-if (entries.length < 2) return entries.map(([name]) => getCountryByName(name)).filter(Boolean);
+    if (phase === "anchor-final") setAnchorWinner(country);
+    if (phase === "companion-final") setCompanionWinner(country);
+  }
 
-const secondScore = entries[1]?.[1];
-const firstScore = entries[0]?.[1];
+  function startRunoff(longlistVotes, runoffPhase, nextMissionIndex) {
+    // Clear runoff votes and advance to runoff mission
+    setAllVoteCounts((prev) => {
+      const next = { ...prev };
+      delete next[runoffPhase];
+      return next;
+    });
+    setMyVotes((prev) => {
+      const next = { ...prev };
+      delete next[runoffPhase];
+      return next;
+    });
+    if (supabase) {
+      supabase.from("cohort_votes").delete().eq("cohort_id", COHORT_ID).eq("vote_phase", runoffPhase).then(() => {});
+    }
+    setMissionIndex(nextMissionIndex);
+    pushStateToSupabase({ mission_index: nextMissionIndex });
+  }
 
-// If tie for 1st, include all tied for 1st; otherwise include all tied for 2nd
-const tiedScore = firstScore === secondScore ? firstScore : secondScore;
-const relevantNames = entries.filter(([, score]) => score === tiedScore).map(([name]) => name);
+  const handleAdvance = useCallback(async function handleAdvance() {
+    if (!activeMission?.canAdvance) return;
 
-return relevantNames.map(getCountryByName).filter(Boolean);
-```
+    // 0: anchor-longlist → check for tie → go to runoff (1) or skip to final (2)
+    if (missionIndex === 0) {
+      const tiedFor2nd = hasTieAtPosition(anchorVotes, 1);
+      const tiedFor1st = hasTieAtPosition(anchorVotes, 0);
+      if (tiedFor2nd || tiedFor1st) {
+        startRunoff(anchorVotes, "anchor-runoff", 1);
+      } else {
+        setMissionIndex(2);
+        pushStateToSupabase({ mission_index: 2 });
+      }
+      return;
+    }
 
-}, [anchorVotes]);
+    // 1: anchor-runoff → go to anchor-final (2)
+    if (missionIndex === 1) {
+      setMissionIndex(2);
+      pushStateToSupabase({ mission_index: 2 });
+      return;
+    }
 
-const companionOptions = useMemo(
-() => buildCompanionOptions(anchorWinner?.name || anchorFinalists[0]?.name || "Santiago"),
-[anchorFinalists, anchorWinner]
-);
+    // 2: anchor-final → lock winner, clear companion votes, go to companion-longlist (3)
+    if (missionIndex === 2) {
+      const finalVotes = allVoteCounts["anchor-final"] || {};
+      const topName = Object.entries(finalVotes).sort((a, b) => b[1] - a[1])[0]?.[0] || anchorWinner?.name;
+      const winner = topName ? getCountryByName(topName) : anchorFinalists[0];
+      if (winner) {
+        setAnchorWinner(winner);
+        setAllVoteCounts((prev) => {
+          const next = { ...prev };
+          delete next["companion-longlist"];
+          delete next["companion-runoff"];
+          delete next["companion-final"];
+          return next;
+        });
+        setMyVotes((prev) => {
+          const next = { ...prev };
+          delete next["companion-longlist"];
+          delete next["companion-runoff"];
+          delete next["companion-final"];
+          return next;
+        });
+        setMissionIndex(3);
+        pushStateToSupabase({ mission_index: 3, anchor_winner: winner.name });
+        if (supabase) {
+          supabase
+            .from("cohort_votes")
+            .delete()
+            .eq("cohort_id", COHORT_ID)
+            .in("vote_phase", ["companion-longlist", "companion-runoff", "companion-final"])
+            .then(() => {});
+        }
+      }
+      return;
+    }
+
+    // 3: companion-longlist → check for tie → go to runoff (4) or skip to final (5)
+    if (missionIndex === 3) {
+      const tiedFor2nd = hasTieAtPosition(companionVotes, 1);
+      const tiedFor1st = hasTieAtPosition(companionVotes, 0);
+      if (tiedFor2nd || tiedFor1st) {
+        startRunoff(companionVotes, "companion-runoff", 4);
+      } else {
+        setMissionIndex(5);
+        pushStateToSupabase({ mission_index: 5 });
+      }
+      return;
+    }
+
+    // 4: companion-runoff → go to companion-final (5)
+    if (missionIndex === 4) {
+      setMissionIndex(5);
+      pushStateToSupabase({ mission_index: 5 });
+      return;
+    }
+
+    // 5: companion-final → lock destination
+    if (missionIndex === 5) {
+      const finalVotes = allVoteCounts["companion-final"] || {};
+      const topName = Object.entries(finalVotes).sort((a, b) => b[1] - a[1])[0]?.[0] || companionWinner?.name;
+      const winner = topName ? getCountryByName(topName) : companionFinalists[0];
+      if (winner) {
+        setCompanionWinner(winner);
+        setShowCelebration(true);
+        pushStateToSupabase({ companion_winner: winner.name });
+      }
+    }
+  }, [missionIndex, activeMission, anchorVotes, anchorFinalists, companionVotes, companionFinalists, anchorWinner, companionWinner, allVoteCounts]);
+
+  // Auto-advance when all COHORT_SIZE votes are in for the active phase.
+  // A ref guards against firing twice if the count briefly hits 16 during a re-render.
+  const autoAdvancedForPhase = useRef(null);
+  useEffect(() => {
+    const phase = activeMission?.mode;
+    if (!phase || !activeMission?.canAdvance) return;
+    // Don't auto-advance the final missions — those lock the destination; keep that explicit.
+    if (phase === "anchor-final" || phase === "companion-final") return;
+    const voteCount = Object.values(activeMission.votes || {}).reduce((s, n) => s + n, 0);
+    if (voteCount >= COHORT_SIZE && autoAdvancedForPhase.current !== phase) {
+      autoAdvancedForPhase.current = phase;
+      handleAdvance();
+    }
+  }, [activeMission, handleAdvance]);
+
+  function handleMissionJump(index) {
+    if (index <= missionIndex) setMissionIndex(index);
+  }
+
+  function porterPick() {
+    const sorted = [...(activeMission?.options || [])].sort((a, b) => b.score - a.score);
+    if (sorted[0]) handleVote(sorted[0]);
+  }
+
+  function resetProtocol() {
+    setMissionIndex(0);
+    setAllVoteCounts({});
+    setMyVotes({});
+    setAnchorWinner(null);
+    setCompanionWinner(null);
+    setShowCelebration(false);
+    if (supabase) {
+      supabase.from("cohort_votes").delete().eq("cohort_id", COHORT_ID).then(() => {});
+      pushStateToSupabase({ mission_index: 0, anchor_winner: null, companion_winner: null });
+    }
+  }
+
+  // Compute anchor finalists — accounts for runoff results
+  const anchorFinalists = useMemo(() => {
+    if (missionIndex >= 2 && Object.keys(anchorRunoffVotes).length > 0) {
+      const sortedLonglist = Object.entries(anchorVotes).sort((a, b) => b[1] - a[1]);
+      const firstScore = sortedLonglist[0]?.[1];
+      const secondScore = sortedLonglist[1]?.[1];
+      const runoffWinner = Object.entries(anchorRunoffVotes).sort((a, b) => b[1] - a[1])[0]?.[0];
+      if (firstScore === secondScore) {
+        // Tie for 1st: runoff winner + the highest-scoring city not in the runoff
+        const runoffNames = sortedLonglist.filter(([, s]) => s === firstScore).map(([n]) => n);
+        const autoAdvance = sortedLonglist.find(([name]) => !runoffNames.includes(name))?.[0];
+        return uniqueByName([runoffWinner, autoAdvance].filter(Boolean).map(getCountryByName).filter(Boolean));
+      }
+      // Tie for 2nd: unchallenged longlist leader + runoff winner
+      return uniqueByName([sortedLonglist[0]?.[0], runoffWinner].filter(Boolean).map(getCountryByName).filter(Boolean));
+    }
+    return getTopCountries(ANCHOR_COUNTRIES, anchorVotes, 2);
+  }, [anchorVotes, anchorRunoffVotes, missionIndex]);
+
+  // Compute anchor runoff candidates (cities tied for 1st or 2nd in longlist)
+  const anchorRunoffCandidates = useMemo(() => {
+    const entries = Object.entries(anchorVotes).sort((a, b) => b[1] - a[1]);
+    if (entries.length < 2) return entries.map(([name]) => getCountryByName(name)).filter(Boolean);
+    const secondScore = entries[1]?.[1];
+    const firstScore = entries[0]?.[1];
+    // If tie for 1st, include all tied for 1st; otherwise include all tied for 2nd
+    const tiedScore = firstScore === secondScore ? firstScore : secondScore;
+    const relevantNames = entries.filter(([, score]) => score === tiedScore).map(([name]) => name);
+    return relevantNames.map(getCountryByName).filter(Boolean);
+  }, [anchorVotes]);
+
+  const companionOptions = useMemo(
+    () => buildCompanionOptions(anchorWinner?.name || anchorFinalists[0]?.name || "Santiago"),
+    [anchorFinalists, anchorWinner]
+  );
 
   // Compute companion finalists — accounts for runoff results
   const companionFinalists = useMemo(() => {
@@ -2328,358 +2407,157 @@ const companionOptions = useMemo(
       const firstScore = sortedLonglist[0]?.[1];
       const secondScore = sortedLonglist[1]?.[1];
       const runoffWinner = Object.entries(companionRunoffVotes).sort((a, b) => b[1] - a[1])[0]?.[0];
-
       if (firstScore === secondScore) {
         const runoffNames = sortedLonglist.filter(([, s]) => s === firstScore).map(([n]) => n);
         const autoAdvance = sortedLonglist.find(([name]) => !runoffNames.includes(name))?.[0];
         return uniqueByName([runoffWinner, autoAdvance].filter(Boolean).map(getCountryByName).filter(Boolean));
       }
-
       return uniqueByName([sortedLonglist[0]?.[0], runoffWinner].filter(Boolean).map(getCountryByName).filter(Boolean));
     }
-
     return getTopCountries(companionOptions, companionVotes, 2);
   }, [companionOptions, companionVotes, companionRunoffVotes, missionIndex]);
 
-// Compute companion runoff candidates
-const companionRunoffCandidates = useMemo(() => {
-const entries = Object.entries(companionVotes).sort((a, b) => b[1] - a[1]);
-if (entries.length < 2) return entries.map(([name]) => getCountryByName(name)).filter(Boolean);
+  // Compute companion runoff candidates
+  const companionRunoffCandidates = useMemo(() => {
+    const entries = Object.entries(companionVotes).sort((a, b) => b[1] - a[1]);
+    if (entries.length < 2) return entries.map(([name]) => getCountryByName(name)).filter(Boolean);
+    const secondScore = entries[1]?.[1];
+    const firstScore = entries[0]?.[1];
+    const tiedScore = firstScore === secondScore ? firstScore : secondScore;
+    const relevantNames = entries.filter(([, score]) => score === tiedScore).map(([name]) => name);
+    return relevantNames.map(getCountryByName).filter(Boolean);
+  }, [companionVotes]);
 
-const secondScore = entries[1]?.[1];
-const firstScore = entries[0]?.[1];
-const tiedScore = firstScore === secondScore ? firstScore : secondScore;
-const relevantNames = entries.filter(([, score]) => score === tiedScore).map(([name]) => name);
-
-return relevantNames.map(getCountryByName).filter(Boolean);
-
-}, [companionVotes]);
-
-const missions = useMemo(
-() => [
-{
-id: "anchor-longlist",
-eyebrow: "Vote 01",
-title: "Vote for City A",
-shortTitle: "City A",
-mode: "anchor-longlist",
-status: missionIndex === 0 ? "active" : "complete",
-instruction:
-"Pick the city that should anchor the Global 85 trip. The two most-voted advance. If there's a close call, a runoff vote runs on the spot.",
-options: ANCHOR_COUNTRIES,
-votes: anchorVotes,
-selectedName: myVotes["anchor-longlist"],
-voteLabel: "Cast Vote",
-nextLabel:
-hasTieAtPosition(anchorVotes, 0) || hasTieAtPosition(anchorVotes, 1)
-? "Tied — Start Runoff"
-: "Advance Top Two",
-canAdvance: Object.keys(anchorVotes).length > 0,
-finalistNames: anchorFinalists.map((c) => c.name),
-},
-{
-id: "anchor-runoff",
-eyebrow: "Runoff A",
-title: "City A Tiebreaker",
-shortTitle: "Runoff A",
-mode: "anchor-runoff",
-status: missionIndex < 1 ? "locked" : missionIndex === 1 ? "active" : "complete",
-instruction:
-"Tied cities from Vote 01 — one more vote to break the tie. Winner joins the top city to form the final two.",
-options: anchorRunoffCandidates.length ? anchorRunoffCandidates : ANCHOR_COUNTRIES.slice(0, 2),
-votes: anchorRunoffVotes,
-selectedName: myVotes["anchor-runoff"],
-voteLabel: "Break the Tie",
-nextLabel: "Confirm Finalists",
-canAdvance: Object.keys(anchorRunoffVotes).length > 0,
-finalistNames: [],
-},
-{
-id: "anchor-final",
-eyebrow: "Vote 02",
-title: "Lock in City A",
-shortTitle: "City A Final",
-mode: "anchor-final",
-status: missionIndex < 2 ? "locked" : missionIndex === 2 ? "active" : "complete",
-instruction: "Top two from Vote 01 head-to-head. The winner becomes City A and unlocks the City B list.",
-options: anchorFinalists.length ? anchorFinalists : ANCHOR_COUNTRIES.slice(0, 2),
-votes: allVoteCounts["anchor-final"] || {},
-selectedName: myVotes["anchor-final"] || anchorWinner?.name,
-voteLabel: "Lock City A",
-nextLabel: "Generate City B List",
-canAdvance: Object.keys(allVoteCounts["anchor-final"] || {}).length > 0 || Boolean(anchorWinner),
-finalistNames: anchorFinalists.map((c) => c.name),
-},
-{
-id: "companion-longlist",
-eyebrow: "Vote 03",
-title: "Vote for City B",
-shortTitle: "City B",
-mode: "companion-longlist",
-status: missionIndex < 3 ? "locked" : missionIndex === 3 ? "active" : "complete",
-instruction: anchorWinner
-  ? "Porter built the City B list around " + anchorWinner.name + " — matched on flight logic, cost balance, cultural contrast, and trip pacing."
-  : "City B list will be generated once City A is locked.",
-options: companionOptions,
-votes: companionVotes,
-selectedName: myVotes["companion-longlist"],
-voteLabel: "Cast Vote",
-nextLabel:
-hasTieAtPosition(companionVotes, 0) || hasTieAtPosition(companionVotes, 1)
-? "Tied — Start Runoff"
-: "Advance Top Two",
-canAdvance: Object.keys(companionVotes).length > 0,
-finalistNames: companionFinalists.map((c) => c.name),
-},
-{
-id: "companion-runoff",
-eyebrow: "Runoff B",
-title: "City B Tiebreaker",
-shortTitle: "Runoff B",
-mode: "companion-runoff",
-status: missionIndex < 4 ? "locked" : missionIndex === 4 ? "active" : "complete",
-instruction:
-"Tied cities from Vote 03 — one more vote to break the tie. Winner joins the top city to form the final two.",
-options: companionRunoffCandidates.length ? companionRunoffCandidates : companionOptions.slice(0, 2),
-votes: companionRunoffVotes,
-selectedName: myVotes["companion-runoff"],
-voteLabel: "Break the Tie",
-nextLabel: "Confirm Finalists",
-canAdvance: Object.keys(companionRunoffVotes).length > 0,
-finalistNames: [],
-},
-{
-id: "companion-final",
-eyebrow: "Vote 04",
-title: "Lock in City B",
-shortTitle: "City B Final",
-mode: "companion-final",
-status: missionIndex < 5 ? "locked" : "active",
-instruction: "Top two from Vote 03 head-to-head. The winner becomes City B — destination locked.",
-options: companionFinalists.length ? companionFinalists : companionOptions.slice(0, 2),
-votes: allVoteCounts["companion-final"] || {},
-selectedName: myVotes["companion-final"] || companionWinner?.name,
-voteLabel: "Lock City B",
-nextLabel: "Lock Destination",
-canAdvance: Object.keys(allVoteCounts["companion-final"] || {}).length > 0 || Boolean(companionWinner),
-finalistNames: companionFinalists.map((c) => c.name),
-},
-],
-[
-missionIndex,
-anchorVotes,
-anchorRunoffVotes,
-anchorFinalists,
-anchorRunoffCandidates,
-companionOptions,
-companionVotes,
-companionRunoffVotes,
-companionFinalists,
-companionRunoffCandidates,
-anchorWinner,
-companionWinner,
-myVotes,
-allVoteCounts,
-]
-);
-
-const activeMission = missions[Math.min(missionIndex, missions.length - 1)];
-const activeVoteCount = Object.values(activeMission?.votes || {}).reduce((s, n) => s + n, 0);
-
-function handleVote(country) {
-const phase = activeMission?.mode;
-if (!phase || activeMission.status !== "active") return;
-
-const prevVote = myVotes[phase];
-
-setMyVotes((prev) => ({ ...prev, [phase]: country.name }));
-
-setAllVoteCounts((prev) => {
-  const pv = { ...(prev[phase] || {}) };
-
-  if (prevVote && pv[prevVote]) pv[prevVote] = Math.max(0, pv[prevVote] - 1);
-  pv[country.name] = (pv[country.name] || 0) + 1;
-
-  return { ...prev, [phase]: pv };
-});
-
-if (supabase) {
-  supabase
-    .from("cohort_votes")
-    .upsert(
+  const missions = useMemo(
+    () => [
       {
-        cohort_id: COHORT_ID,
-        vote_phase: phase,
-        country_name: country.name,
-        user_id: userId,
+        id: "anchor-longlist",
+        eyebrow: "Vote 01",
+        title: "Vote for City A",
+        shortTitle: "City A",
+        mode: "anchor-longlist",
+        status: missionIndex === 0 ? "active" : "complete",
+        instruction: "Pick the city that should anchor the Global 85 trip. The two most-voted advance. If there's a close call, a runoff vote runs on the spot.",
+        options: ANCHOR_COUNTRIES,
+        votes: anchorVotes,
+        selectedName: myVotes["anchor-longlist"],
+        voteLabel: "Cast Vote",
+        nextLabel: hasTieAtPosition(anchorVotes, 0) || hasTieAtPosition(anchorVotes, 1) ? "Tied — Start Runoff" : "Advance Top Two",
+        canAdvance: Object.keys(anchorVotes).length > 0,
+        finalistNames: anchorFinalists.map((c) => c.name),
       },
-      { onConflict: "cohort_id,vote_phase,user_id" }
-    )
-    .then(() => {});
-}
+      {
+        id: "anchor-runoff",
+        eyebrow: "Runoff A",
+        title: "City A Tiebreaker",
+        shortTitle: "Runoff A",
+        mode: "anchor-runoff",
+        status: missionIndex < 1 ? "locked" : missionIndex === 1 ? "active" : "complete",
+        instruction: "Tied cities from Vote 01 — one more vote to break the tie. Winner joins the top city to form the final two.",
+        options: anchorRunoffCandidates.length ? anchorRunoffCandidates : ANCHOR_COUNTRIES.slice(0, 2),
+        votes: anchorRunoffVotes,
+        selectedName: myVotes["anchor-runoff"],
+        voteLabel: "Break the Tie",
+        nextLabel: "Confirm Finalists",
+        canAdvance: Object.keys(anchorRunoffVotes).length > 0,
+        finalistNames: [],
+      },
+      {
+        id: "anchor-final",
+        eyebrow: "Vote 02",
+        title: "Lock in City A",
+        shortTitle: "City A Final",
+        mode: "anchor-final",
+        status: missionIndex < 2 ? "locked" : missionIndex === 2 ? "active" : "complete",
+        instruction: "Top two from Vote 01 head-to-head. The winner becomes City A and unlocks the City B list.",
+        options: anchorFinalists.length ? anchorFinalists : ANCHOR_COUNTRIES.slice(0, 2),
+        votes: allVoteCounts["anchor-final"] || {},
+        selectedName: myVotes["anchor-final"] || anchorWinner?.name,
+        voteLabel: "Lock City A",
+        nextLabel: "Generate City B List",
+        canAdvance: Object.keys(allVoteCounts["anchor-final"] || {}).length > 0 || Boolean(anchorWinner),
+        finalistNames: anchorFinalists.map((c) => c.name),
+      },
+      {
+        id: "companion-longlist",
+        eyebrow: "Vote 03",
+        title: "Vote for City B",
+        shortTitle: "City B",
+        mode: "companion-longlist",
+        status: missionIndex < 3 ? "locked" : missionIndex === 3 ? "active" : "complete",
+        instruction: anchorWinner
+          ? `Porter built the City B list around ${anchorWinner.name} — matched on flight logic, cost balance, cultural contrast, and trip pacing.`
+          : "City B list will be generated once City A is locked.",
+        options: companionOptions,
+        votes: companionVotes,
+        selectedName: myVotes["companion-longlist"],
+        voteLabel: "Cast Vote",
+        nextLabel: hasTieAtPosition(companionVotes, 0) || hasTieAtPosition(companionVotes, 1) ? "Tied — Start Runoff" : "Advance Top Two",
+        canAdvance: Object.keys(companionVotes).length > 0,
+        finalistNames: companionFinalists.map((c) => c.name),
+      },
+      {
+        id: "companion-runoff",
+        eyebrow: "Runoff B",
+        title: "City B Tiebreaker",
+        shortTitle: "Runoff B",
+        mode: "companion-runoff",
+        status: missionIndex < 4 ? "locked" : missionIndex === 4 ? "active" : "complete",
+        instruction: "Tied cities from Vote 03 — one more vote to break the tie. Winner joins the top city to form the final two.",
+        options: companionRunoffCandidates.length ? companionRunoffCandidates : companionOptions.slice(0, 2),
+        votes: companionRunoffVotes,
+        selectedName: myVotes["companion-runoff"],
+        voteLabel: "Break the Tie",
+        nextLabel: "Confirm Finalists",
+        canAdvance: Object.keys(companionRunoffVotes).length > 0,
+        finalistNames: [],
+      },
+      {
+        id: "companion-final",
+        eyebrow: "Vote 04",
+        title: "Lock in City B",
+        shortTitle: "City B Final",
+        mode: "companion-final",
+        status: missionIndex < 5 ? "locked" : "active",
+        instruction: "Top two from Vote 03 head-to-head. The winner becomes City B — destination locked.",
+        options: companionFinalists.length ? companionFinalists : companionOptions.slice(0, 2),
+        votes: allVoteCounts["companion-final"] || {},
+        selectedName: myVotes["companion-final"] || companionWinner?.name,
+        voteLabel: "Lock City B",
+        nextLabel: "Lock Destination",
+        canAdvance: Object.keys(allVoteCounts["companion-final"] || {}).length > 0 || Boolean(companionWinner),
+        finalistNames: companionFinalists.map((c) => c.name),
+      },
+    ],
+    [
+      missionIndex, anchorVotes, anchorRunoffVotes, anchorFinalists, anchorRunoffCandidates,
+      companionOptions, companionVotes, companionRunoffVotes, companionFinalists, companionRunoffCandidates,
+      anchorWinner, companionWinner, myVotes, allVoteCounts,
+    ]
+  );
 
-if (phase === "anchor-final") setAnchorWinner(country);
-if (phase === "companion-final") setCompanionWinner(country);
+  const activeMission = missions[Math.min(missionIndex, missions.length - 1)];
+  const activeVoteCount = Object.values(activeMission?.votes || {}).reduce((s, n) => s + n, 0);
 
-}
-
-const handleAdvance = useCallback(
-async function handleAdvance() {
-if (!activeMission?.canAdvance) return;
-
-  // 0: anchor-longlist → check for tie → go to runoff (1) or skip to final (2)
-  if (missionIndex === 0) {
-    const tiedFor2nd = hasTieAtPosition(anchorVotes, 1);
-    const tiedFor1st = hasTieAtPosition(anchorVotes, 0);
-
-    if (tiedFor2nd || tiedFor1st) {
-      startRunoff(anchorVotes, "anchor-runoff", 1);
-    } else {
-      setMissionIndex(2);
-      pushStateToSupabase({ mission_index: 2 });
-    }
-
-    return;
-  }
-
-  // 1: anchor-runoff → go to anchor-final (2)
-  if (missionIndex === 1) {
-    setMissionIndex(2);
-    pushStateToSupabase({ mission_index: 2 });
-    return;
-  }
-
-  // 2: anchor-final → lock winner, clear companion votes, go to companion-longlist (3)
-  if (missionIndex === 2) {
-    const finalVotes = allVoteCounts["anchor-final"] || {};
-    const topName = Object.entries(finalVotes).sort((a, b) => b[1] - a[1])[0]?.[0] || anchorWinner?.name;
-    const winner = topName ? getCountryByName(topName) : anchorFinalists[0];
-
-    if (winner) {
-      setAnchorWinner(winner);
-
-      setAllVoteCounts((prev) => {
-        const next = { ...prev };
-        delete next["companion-longlist"];
-        delete next["companion-runoff"];
-        delete next["companion-final"];
-        return next;
-      });
-
-      setMyVotes((prev) => {
-        const next = { ...prev };
-        delete next["companion-longlist"];
-        delete next["companion-runoff"];
-        delete next["companion-final"];
-        return next;
-      });
-
-      setMissionIndex(3);
-      pushStateToSupabase({ mission_index: 3, anchor_winner: winner.name });
-
-      if (supabase) {
-        supabase
-          .from("cohort_votes")
-          .delete()
-          .eq("cohort_id", COHORT_ID)
-          .in("vote_phase", ["companion-longlist", "companion-runoff", "companion-final"])
-          .then(() => {});
-      }
-    }
-
-    return;
-  }
-
-  // 3: companion-longlist → check for tie → go to runoff (4) or skip to final (5)
-  if (missionIndex === 3) {
-    const tiedFor2nd = hasTieAtPosition(companionVotes, 1);
-    const tiedFor1st = hasTieAtPosition(companionVotes, 0);
-
-    if (tiedFor2nd || tiedFor1st) {
-      startRunoff(companionVotes, "companion-runoff", 4);
-    } else {
-      setMissionIndex(5);
-      pushStateToSupabase({ mission_index: 5 });
-    }
-
-    return;
-  }
-
-  // 4: companion-runoff → go to companion-final (5)
-  if (missionIndex === 4) {
-    setMissionIndex(5);
-    pushStateToSupabase({ mission_index: 5 });
-    return;
-  }
-
-  // 5: companion-final → lock destination
-  if (missionIndex === 5) {
-    const finalVotes = allVoteCounts["companion-final"] || {};
-    const topName = Object.entries(finalVotes).sort((a, b) => b[1] - a[1])[0]?.[0] || companionWinner?.name;
-    const winner = topName ? getCountryByName(topName) : companionFinalists[0];
-
-    if (winner) {
-      setCompanionWinner(winner);
-      setShowCelebration(true);
-      pushStateToSupabase({ companion_winner: winner.name });
-    }
-  }
-},
-[
-  missionIndex,
-  activeMission,
-  anchorVotes,
-  anchorFinalists,
-  companionVotes,
-  companionFinalists,
-  anchorWinner,
-  companionWinner,
-  allVoteCounts,
-]
-);
-
-// Auto-advance when all COHORT_SIZE votes are in for the active phase.
-// A ref guards against firing twice if the count briefly hits 16 during a re-render.
-const autoAdvancedForPhase = useRef(null);
-
-useEffect(() => {
-const phase = activeMission?.mode;
-if (!phase || !activeMission?.canAdvance) return;
-
-// Don't auto-advance the final missions — those lock the destination; keep that explicit.
-if (phase === "anchor-final" || phase === "companion-final") return;
-
-const voteCount = Object.values(activeMission.votes || {}).reduce((s, n) => s + n, 0);
-
-if (voteCount >= COHORT_SIZE && autoAdvancedForPhase.current !== phase) {
-  autoAdvancedForPhase.current = phase;
-  handleAdvance();
-}
-
-}, [activeMission, handleAdvance]);
-
-function porterPick() {
-const sorted = [...(activeMission?.options || [])].sort((a, b) => b.score - a.score);
-if (sorted[0]) handleVote(sorted[0]);
-}
-
-return ( <main className="fixed inset-0 z-[999] overflow-hidden">
-<DestinationChamber
-missions={missions}
-missionIndex={missionIndex}
-activeMission={activeMission}
-activeVoteCount={activeVoteCount}
-anchorWinner={anchorWinner}
-companionWinner={companionWinner}
-showCelebration={showCelebration}
-onVote={handleVote}
-onAdvance={handleAdvance}
-onMissionJump={handleMissionJump}
-onPorterPick={porterPick}
-onReset={resetProtocol}
-onDismissCelebration={() => setShowCelebration(false)}
-/> </main>
-);
+  return (
+    <main className="fixed inset-0 z-[999] overflow-hidden">
+      <DestinationChamber
+        missions={missions}
+        missionIndex={missionIndex}
+        activeMission={activeMission}
+        activeVoteCount={activeVoteCount}
+        anchorWinner={anchorWinner}
+        companionWinner={companionWinner}
+        showCelebration={showCelebration}
+        onVote={handleVote}
+        onAdvance={handleAdvance}
+        onMissionJump={handleMissionJump}
+        onPorterPick={porterPick}
+        onReset={resetProtocol}
+        onDismissCelebration={() => setShowCelebration(false)}
+      />
+    </main>
+  );
 }
 
 function DestinationChamber({
@@ -3113,7 +2991,7 @@ function DestinationChamber({
             pointAltitude={(d) => d.size}
             pointRadius={0.18}
             pointColor={(d) => d.color}
-            pointLabel={(d) => countryIcon(d) + " " + d.name + "<br/>" + d.note}
+            pointLabel={(d) => `${countryIcon(d)} ${d.name}<br/>${d.note}`}
             onPointClick={handlePointClick}
             ringsData={rings}
             ringLat={(d) => d.lat}
@@ -3135,7 +3013,7 @@ function DestinationChamber({
             arcStartLng={(d) => d.startLng}
             arcEndLat={(d) => d.endLat}
             arcEndLng={(d) => d.endLng}
-            arcColor={() => COLORS.champagne + "99"}
+            arcColor={() => `${COLORS.champagne}99`}
             arcAltitude={0.25}
             arcStroke={0.35}
             arcDashLength={0.45}
@@ -3332,120 +3210,153 @@ function RouteArchive() {
 }
 
 function ChamberCss() {
-  const css = [
-    "@keyframes chamberScan {",
-    "0% { transform: translateY(-120%); opacity: 0; }",
-    "12% { opacity: .38; }",
-    "55% { opacity: .14; }",
-    "100% { transform: translateY(120%); opacity: 0; }",
-    "}",
-    "@keyframes panelMaterialize {",
-    "0% { opacity: 0; transform: translateY(22px) translateX(16px) scale(.96); filter: blur(14px); }",
-    "60% { opacity: .82; filter: blur(2px); }",
-    "100% { opacity: 1; transform: translateY(0) translateX(0) scale(1); filter: blur(0); }",
-    "}",
-    "@keyframes mobilePanelMaterialize {",
-    "0% { opacity: 0; transform: translateY(22px) scale(.98); filter: blur(12px); }",
-    "100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }",
-    "}",
-    "@keyframes targetPing {",
-    "0% { opacity: .9; transform: scale(.84); }",
-    "70% { opacity: .18; transform: scale(1.2); }",
-    "100% { opacity: 0; transform: scale(1.3); }",
-    "}",
-    "@keyframes floorSpin {",
-    "from { transform: translate(-50%, -50%) rotate(0deg); }",
-    "to { transform: translate(-50%, -50%) rotate(360deg); }",
-    "}",
-    "@keyframes holoFlicker {",
-    "0%, 100% { opacity: .96; }",
-    "7% { opacity: .78; }",
-    "9% { opacity: 1; }",
-    "52% { opacity: .83; }",
-    "54% { opacity: .98; }",
-    "}",
-    "@keyframes gridPulse {",
-    "0%, 100% { opacity: .72; filter: brightness(1); }",
-    "50% { opacity: 1; filter: brightness(1.35); }",
-    "}",
-    "@keyframes beamBreathe {",
-    "0%, 100% { opacity: .48; transform: scaleX(.94); }",
-    "50% { opacity: .92; transform: scaleX(1); }",
-    "}",
-    "@keyframes reflectionBreathe {",
-    "0%, 100% { opacity: .48; transform: translateX(-50%) scaleY(-.38) scaleX(.96); }",
-    "50% { opacity: .72; transform: translateX(-50%) scaleY(-.43) scaleX(1.02); }",
-    "}",
-    "@keyframes holoShell {",
-    "0%, 100% { opacity: .34; transform: translate(-50%, -50%) scale(1); }",
-    "50% { opacity: .54; transform: translate(-50%, -50%) scale(1.018); }",
-    "}",
-    ".holo-globe-shell::before {",
-    "content: \"\";",
-    "position: absolute;",
-    "left: 50%;",
-    "top: 50%;",
-    "width: min(64vw, 620px);",
-    "height: min(64vw, 620px);",
-    "transform: translate(-50%, -50%);",
-    "border-radius: 9999px;",
-    "pointer-events: none;",
-    "z-index: 5;",
-    "will-change: transform, opacity;",
-    "background: repeating-linear-gradient(0deg, rgba(196,150,42,0.14) 0px, rgba(196,150,42,0.14) 1px, transparent 2px, transparent 7px), radial-gradient(circle at 38% 32%, rgba(255,255,255,0.22), transparent 16%), radial-gradient(circle, transparent 45%, rgba(196,150,42,0.16) 57%, rgba(196,150,42,0.18) 70%, transparent 74%);",
-    "mix-blend-mode: screen;",
-    "animation: holoShell 3.6s ease-in-out infinite;",
-    "}",
-    ".holo-globe-shell::after {",
-    "content: \"\";",
-    "position: absolute;",
-    "left: 50%;",
-    "top: 50%;",
-    "width: min(66vw, 650px);",
-    "height: min(66vw, 650px);",
-    "transform: translate(-50%, -50%);",
-    "border-radius: 9999px;",
-    "pointer-events: none;",
-    "z-index: 6;",
-    "border: 1px solid rgba(196,150,42,0.22);",
-    "box-shadow: inset 0 0 38px rgba(196,150,42,0.10), inset 0 0 70px rgba(196,150,42,0.08), 0 0 42px rgba(196,150,42,0.14), 0 0 82px rgba(196,150,42,0.10);",
-    "}",
-    ".panel-materialize {",
-    "animation: panelMaterialize 520ms cubic-bezier(.2,.9,.2,1) both, holoFlicker 7s ease-in-out infinite;",
-    "}",
-    ".mobile-panel-materialize {",
-    "animation: mobilePanelMaterialize 420ms cubic-bezier(.2,.9,.2,1) both, holoFlicker 7s ease-in-out infinite;",
-    "}",
-    ".chamber-scrollbar::-webkit-scrollbar {",
-    "width: 4px;",
-    "height: 4px;",
-    "}",
-    ".chamber-scrollbar::-webkit-scrollbar-thumb {",
-    "background: rgba(196,150,42,.48);",
-    "border-radius: 999px;",
-    "}",
-    "@keyframes confettiFall {",
-    "0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }",
-    "80% { opacity: 0.7; }",
-    "100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }",
-    "}",
-    "@keyframes deepDiveEnter {",
-    "0% { opacity: 0; transform: translateY(32px); }",
-    "100% { opacity: 1; transform: translateY(0); }",
-    "}",
-    "@keyframes celebrationEnter {",
-    "0% { opacity: 0; transform: scale(0.94); }",
-    "100% { opacity: 1; transform: scale(1); }",
-    "}",
-    ".deep-dive-enter {",
-    "animation: deepDiveEnter 420ms cubic-bezier(.2,.9,.2,1) both;",
-    "}",
-    ".celebration-enter {",
-    "animation: celebrationEnter 500ms cubic-bezier(.2,.9,.2,1) both;",
-    "}",
-  ].join("\\n");
+  return (
+    <style>{`
+      @keyframes chamberScan {
+        0% { transform: translateY(-120%); opacity: 0; }
+        12% { opacity: .38; }
+        55% { opacity: .14; }
+        100% { transform: translateY(120%); opacity: 0; }
+      }
 
-  return <style>{css}</style>;
+      @keyframes panelMaterialize {
+        0% { opacity: 0; transform: translateY(22px) translateX(16px) scale(.96); filter: blur(14px); }
+        60% { opacity: .82; filter: blur(2px); }
+        100% { opacity: 1; transform: translateY(0) translateX(0) scale(1); filter: blur(0); }
+      }
+
+      @keyframes mobilePanelMaterialize {
+        0% { opacity: 0; transform: translateY(22px) scale(.98); filter: blur(12px); }
+        100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+      }
+
+      @keyframes targetPing {
+        0% { opacity: .9; transform: scale(.84); }
+        70% { opacity: .18; transform: scale(1.2); }
+        100% { opacity: 0; transform: scale(1.3); }
+      }
+
+      @keyframes floorSpin {
+        from { transform: translate(-50%, -50%) rotate(0deg); }
+        to { transform: translate(-50%, -50%) rotate(360deg); }
+      }
+
+      @keyframes holoFlicker {
+        0%, 100% { opacity: .96; }
+        7% { opacity: .78; }
+        9% { opacity: 1; }
+        52% { opacity: .83; }
+        54% { opacity: .98; }
+      }
+
+      @keyframes gridPulse {
+        0%, 100% { opacity: .72; filter: brightness(1); }
+        50% { opacity: 1; filter: brightness(1.35); }
+      }
+
+      @keyframes beamBreathe {
+        0%, 100% { opacity: .48; transform: scaleX(.94); }
+        50% { opacity: .92; transform: scaleX(1); }
+      }
+
+      @keyframes reflectionBreathe {
+        0%, 100% { opacity: .48; transform: translateX(-50%) scaleY(-.38) scaleX(.96); }
+        50% { opacity: .72; transform: translateX(-50%) scaleY(-.43) scaleX(1.02); }
+      }
+
+      @keyframes holoShell {
+        0%, 100% { opacity: .34; transform: translate(-50%, -50%) scale(1); }
+        50% { opacity: .54; transform: translate(-50%, -50%) scale(1.018); }
+      }
+
+      .holo-globe-shell::before {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: min(64vw, 620px);
+        height: min(64vw, 620px);
+        transform: translate(-50%, -50%);
+        border-radius: 9999px;
+        pointer-events: none;
+        z-index: 5;
+        will-change: transform, opacity;
+        background:
+          repeating-linear-gradient(
+            0deg,
+            rgba(196,150,42,0.14) 0px,
+            rgba(196,150,42,0.14) 1px,
+            transparent 2px,
+            transparent 7px
+          ),
+          radial-gradient(circle at 38% 32%, rgba(255,255,255,0.22), transparent 16%),
+          radial-gradient(circle, transparent 45%, rgba(196,150,42,0.16) 57%, rgba(196,150,42,0.18) 70%, transparent 74%);
+        mix-blend-mode: screen;
+        animation: holoShell 3.6s ease-in-out infinite;
+      }
+
+      .holo-globe-shell::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: min(66vw, 650px);
+        height: min(66vw, 650px);
+        transform: translate(-50%, -50%);
+        border-radius: 9999px;
+        pointer-events: none;
+        z-index: 6;
+        border: 1px solid rgba(196,150,42,0.22);
+        box-shadow:
+          inset 0 0 38px rgba(196,150,42,0.10),
+          inset 0 0 70px rgba(196,150,42,0.08),
+          0 0 42px rgba(196,150,42,0.14),
+          0 0 82px rgba(196,150,42,0.10);
+      }
+
+      .panel-materialize {
+        animation: panelMaterialize 520ms cubic-bezier(.2,.9,.2,1) both, holoFlicker 7s ease-in-out infinite;
+      }
+
+      .mobile-panel-materialize {
+        animation: mobilePanelMaterialize 420ms cubic-bezier(.2,.9,.2,1) both, holoFlicker 7s ease-in-out infinite;
+      }
+
+      .chamber-scrollbar::-webkit-scrollbar {
+        width: 4px;
+        height: 4px;
+      }
+
+      .chamber-scrollbar::-webkit-scrollbar-thumb {
+        background: rgba(196,150,42,.48);
+        border-radius: 999px;
+      }
+
+      @keyframes confettiFall {
+        0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }
+        80% { opacity: 0.7; }
+        100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
+      }
+
+      @keyframes deepDiveEnter {
+        0% { opacity: 0; transform: translateY(32px); }
+        100% { opacity: 1; transform: translateY(0); }
+      }
+
+      @keyframes celebrationEnter {
+        0% { opacity: 0; transform: scale(0.94); }
+        100% { opacity: 1; transform: scale(1); }
+      }
+
+      .deep-dive-enter {
+        animation: deepDiveEnter 420ms cubic-bezier(.2,.9,.2,1) both;
+      }
+
+      .celebration-enter {
+        animation: celebrationEnter 500ms cubic-bezier(.2,.9,.2,1) both;
+      }
+    `}</style>
+  );
 }
 
 function RoomBackground({ active }) {
