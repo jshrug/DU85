@@ -2122,7 +2122,6 @@ return { counts, mine };
 useEffect(() => {
 if (!supabase) return;
 
-```
 async function load() {
   const [{ data: votes }, { data: state }] = await Promise.all([
     supabase.from("cohort_votes").select("vote_phase,country_name,user_id").eq("cohort_id", COHORT_ID),
@@ -2242,14 +2241,12 @@ async function load() {
   .subscribe();
 
 return () => supabase.removeChannel(channel);
-```
 
 }, [userId]);
 
 async function pushStateToSupabase(patch) {
 if (!supabase) return;
 
-```
 await supabase
   .from("cohort_state")
   .upsert(
@@ -2260,7 +2257,6 @@ await supabase
     },
     { onConflict: "cohort_id" }
   );
-```
 
 }
 
@@ -2272,7 +2268,6 @@ delete next[runoffPhase];
 return next;
 });
 
-```
 setMyVotes((prev) => {
   const next = { ...prev };
   delete next[runoffPhase];
@@ -2290,7 +2285,6 @@ if (supabase) {
 
 setMissionIndex(nextMissionIndex);
 pushStateToSupabase({ mission_index: nextMissionIndex });
-```
 
 }
 
@@ -2306,7 +2300,6 @@ setAnchorWinner(null);
 setCompanionWinner(null);
 setShowCelebration(false);
 
-```
 if (supabase) {
   supabase.from("cohort_votes").delete().eq("cohort_id", COHORT_ID).then(() => {});
   pushStateToSupabase({ mission_index: 0, anchor_winner: null, companion_winner: null });
@@ -2322,7 +2315,6 @@ const firstScore = sortedLonglist[0]?.[1];
 const secondScore = sortedLonglist[1]?.[1];
 const runoffWinner = Object.entries(anchorRunoffVotes).sort((a, b) => b[1] - a[1])[0]?.[0];
 
-```
   if (firstScore === secondScore) {
     // Tie for 1st: runoff winner + the highest-scoring city not in the runoff
     const runoffNames = sortedLonglist.filter(([, s]) => s === firstScore).map(([n]) => n);
@@ -2388,14 +2380,12 @@ const companionRunoffCandidates = useMemo(() => {
 const entries = Object.entries(companionVotes).sort((a, b) => b[1] - a[1]);
 if (entries.length < 2) return entries.map(([name]) => getCountryByName(name)).filter(Boolean);
 
-```
 const secondScore = entries[1]?.[1];
 const firstScore = entries[0]?.[1];
 const tiedScore = firstScore === secondScore ? firstScore : secondScore;
 const relevantNames = entries.filter(([, score]) => score === tiedScore).map(([name]) => name);
 
 return relevantNames.map(getCountryByName).filter(Boolean);
-```
 
 }, [companionVotes]);
 
@@ -2534,7 +2524,6 @@ function handleVote(country) {
 const phase = activeMission?.mode;
 if (!phase || activeMission.status !== "active") return;
 
-```
 const prevVote = myVotes[phase];
 
 setMyVotes((prev) => ({ ...prev, [phase]: country.name }));
@@ -2573,7 +2562,6 @@ const handleAdvance = useCallback(
 async function handleAdvance() {
 if (!activeMission?.canAdvance) return;
 
-```
   // 0: anchor-longlist → check for tie → go to runoff (1) or skip to final (2)
   if (missionIndex === 0) {
     const tiedFor2nd = hasTieAtPosition(anchorVotes, 1);
@@ -2695,7 +2683,6 @@ useEffect(() => {
 const phase = activeMission?.mode;
 if (!phase || !activeMission?.canAdvance) return;
 
-```
 // Don't auto-advance the final missions — those lock the destination; keep that explicit.
 if (phase === "anchor-final" || phase === "companion-final") return;
 
@@ -2705,7 +2692,6 @@ if (voteCount >= COHORT_SIZE && autoAdvancedForPhase.current !== phase) {
   autoAdvancedForPhase.current = phase;
   handleAdvance();
 }
-```
 
 }, [activeMission, handleAdvance]);
 
