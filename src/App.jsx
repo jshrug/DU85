@@ -2136,15 +2136,24 @@ async function load() {
   }
 
   if (state) {
-    setMissionIndex(state.mission_index ?? 0);
+          if (state) {
+        setMissionIndex(state.mission_index ?? 0);
 
-    if (state.anchor_winner) {
-      const aw = getCountryByName(state.anchor_winner);
-      if (aw) setAnchorWinner(aw);
+        if (state.anchor_winner) {
+          const aw = getCountryByName(state.anchor_winner);
+          if (aw) setAnchorWinner(aw);
+        }
+
+        if (state.companion_winner) {
+          const cw = getCountryByName(state.companion_winner);
+          if (cw) setCompanionWinner(cw);
+        }
+      }
     }
 
-    if (state.companion_winner) {
-          const channel = supabase
+    load();
+
+    const channel = supabase
       .channel(`cohort-${COHORT_ID}`)
       .on(
         "postgres_changes",
@@ -2179,6 +2188,26 @@ async function load() {
           const s = payload.new;
           if (!s) return;
 
+          setMissionIndex(s.mission_index ?? 0);
+
+          if (s.anchor_winner) {
+            const aw = getCountryByName(s.anchor_winner);
+            if (aw) setAnchorWinner(aw);
+          }
+
+          if (s.companion_winner) {
+            const cw = getCountryByName(s.companion_winner);
+            if (cw) {
+              setCompanionWinner(cw);
+              setShowCelebration(true);
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, [userId]);
           setMissionIndex(s.mission_index ?? 0);
 
           if (s.anchor_winner) {
