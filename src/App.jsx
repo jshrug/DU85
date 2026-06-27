@@ -2144,43 +2144,60 @@ async function load() {
     }
 
     if (state.companion_winner) {
-      const cw = getCountryByName(state.companion_winner);
-      if (cw) setCompanionWinner(cw);
-    }
-  }
-}
+          const channel = supabase
+      .channel(`cohort-${COHORT_ID}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "cohort_votes",
+          filter: `cohort_id=eq.${COHORT_ID}`,
+        },
+        async () => {
+          const { data: votes } = await supabase
+            .from("cohort_votes")
+            .select("vote_phase,country_name,user_id")
+            .eq("cohort_id", COHORT_ID);
 
-load();
+          if (votes) {
+            const { counts, mine } = parseVotes(votes);
+            setAllVoteCounts(counts);
+            setMyVotes(mine);
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "cohort_state",
+          filter: `cohort_id=eq.${COHORT_ID}`,
+        },
+        (payload) => {
+          const s = payload.new;
+          if (!s) return;
 
-const channel = supabase
-  .channel(`cohort-${COHORT_ID}`)
-  .on(
-    "postgres_changes",
-    { event: "*", schema: "public", table: "cohort_votes", filter: `cohort_id=eq.${COHORT_ID}` },
-    async () => {
-      const { data: votes } = await supabase
-        .from("cohort_votes")
-        .select("vote_phase,country_name,user_id")
-        .eq("cohort_id", COHORT_ID);
+          setMissionIndex(s.mission_index ?? 0);
 
-      if (votes) {
-        const { counts, mine } = parseVotes(votes);
-        setAllVoteCounts(counts);
-        setMyVotes(mine);
-      }
-    }
-  )
-  .on(
-    "postgres_changes",
-    { event: "*", schema: "public", table: "cohort_state", filter: `cohort_id=eq.${COHORT_ID}` },
-    (payload) => {
-      const s = payload.new;
-      if (!s) return;
+          if (s.anchor_winner) {
+            const aw = getCountryByName(s.anchor_winner);
+            if (aw) setAnchorWinner(aw);
+          }
 
-      setMissionIndex(s.mission_index ?? 0);
+          if (s.companion_winner) {
+            const cw = getCountryByName(s.companion_winner);
+            if (cw) {
+              setCompanionWinner(cw);
+              setShowCelebration(true);
+            }
+          }
+        }
+      )
+      .subscribe();
 
-      if (s.anchor_winner) {
-        const aw = getCountryByName(s.anchor_winner);
+    return () => supabase.removeChannel(channel);
         if (aw) setAnchorWinner(aw);
       }
 
