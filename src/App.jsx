@@ -2182,7 +2182,7 @@ async function load() {
           event: "*",
           schema: "public",
           table: "cohort_state",
-          filter: `cohort_id=eq.${COHORT_ID}`,
+          filter: "cohort_id=eq." + COHORT_ID,
         },
         (payload) => {
           const s = payload.new;
