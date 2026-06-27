@@ -2311,7 +2311,6 @@ if (supabase) {
   supabase.from("cohort_votes").delete().eq("cohort_id", COHORT_ID).then(() => {});
   pushStateToSupabase({ mission_index: 0, anchor_winner: null, companion_winner: null });
 }
-```
 
 }
 
