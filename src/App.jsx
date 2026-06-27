@@ -3332,153 +3332,120 @@ function RouteArchive() {
 }
 
 function ChamberCss() {
-  return (
-    <style>{`
-      @keyframes chamberScan {
-        0% { transform: translateY(-120%); opacity: 0; }
-        12% { opacity: .38; }
-        55% { opacity: .14; }
-        100% { transform: translateY(120%); opacity: 0; }
-      }
+  const css = [
+    "@keyframes chamberScan {",
+    "0% { transform: translateY(-120%); opacity: 0; }",
+    "12% { opacity: .38; }",
+    "55% { opacity: .14; }",
+    "100% { transform: translateY(120%); opacity: 0; }",
+    "}",
+    "@keyframes panelMaterialize {",
+    "0% { opacity: 0; transform: translateY(22px) translateX(16px) scale(.96); filter: blur(14px); }",
+    "60% { opacity: .82; filter: blur(2px); }",
+    "100% { opacity: 1; transform: translateY(0) translateX(0) scale(1); filter: blur(0); }",
+    "}",
+    "@keyframes mobilePanelMaterialize {",
+    "0% { opacity: 0; transform: translateY(22px) scale(.98); filter: blur(12px); }",
+    "100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }",
+    "}",
+    "@keyframes targetPing {",
+    "0% { opacity: .9; transform: scale(.84); }",
+    "70% { opacity: .18; transform: scale(1.2); }",
+    "100% { opacity: 0; transform: scale(1.3); }",
+    "}",
+    "@keyframes floorSpin {",
+    "from { transform: translate(-50%, -50%) rotate(0deg); }",
+    "to { transform: translate(-50%, -50%) rotate(360deg); }",
+    "}",
+    "@keyframes holoFlicker {",
+    "0%, 100% { opacity: .96; }",
+    "7% { opacity: .78; }",
+    "9% { opacity: 1; }",
+    "52% { opacity: .83; }",
+    "54% { opacity: .98; }",
+    "}",
+    "@keyframes gridPulse {",
+    "0%, 100% { opacity: .72; filter: brightness(1); }",
+    "50% { opacity: 1; filter: brightness(1.35); }",
+    "}",
+    "@keyframes beamBreathe {",
+    "0%, 100% { opacity: .48; transform: scaleX(.94); }",
+    "50% { opacity: .92; transform: scaleX(1); }",
+    "}",
+    "@keyframes reflectionBreathe {",
+    "0%, 100% { opacity: .48; transform: translateX(-50%) scaleY(-.38) scaleX(.96); }",
+    "50% { opacity: .72; transform: translateX(-50%) scaleY(-.43) scaleX(1.02); }",
+    "}",
+    "@keyframes holoShell {",
+    "0%, 100% { opacity: .34; transform: translate(-50%, -50%) scale(1); }",
+    "50% { opacity: .54; transform: translate(-50%, -50%) scale(1.018); }",
+    "}",
+    ".holo-globe-shell::before {",
+    "content: \"\";",
+    "position: absolute;",
+    "left: 50%;",
+    "top: 50%;",
+    "width: min(64vw, 620px);",
+    "height: min(64vw, 620px);",
+    "transform: translate(-50%, -50%);",
+    "border-radius: 9999px;",
+    "pointer-events: none;",
+    "z-index: 5;",
+    "will-change: transform, opacity;",
+    "background: repeating-linear-gradient(0deg, rgba(196,150,42,0.14) 0px, rgba(196,150,42,0.14) 1px, transparent 2px, transparent 7px), radial-gradient(circle at 38% 32%, rgba(255,255,255,0.22), transparent 16%), radial-gradient(circle, transparent 45%, rgba(196,150,42,0.16) 57%, rgba(196,150,42,0.18) 70%, transparent 74%);",
+    "mix-blend-mode: screen;",
+    "animation: holoShell 3.6s ease-in-out infinite;",
+    "}",
+    ".holo-globe-shell::after {",
+    "content: \"\";",
+    "position: absolute;",
+    "left: 50%;",
+    "top: 50%;",
+    "width: min(66vw, 650px);",
+    "height: min(66vw, 650px);",
+    "transform: translate(-50%, -50%);",
+    "border-radius: 9999px;",
+    "pointer-events: none;",
+    "z-index: 6;",
+    "border: 1px solid rgba(196,150,42,0.22);",
+    "box-shadow: inset 0 0 38px rgba(196,150,42,0.10), inset 0 0 70px rgba(196,150,42,0.08), 0 0 42px rgba(196,150,42,0.14), 0 0 82px rgba(196,150,42,0.10);",
+    "}",
+    ".panel-materialize {",
+    "animation: panelMaterialize 520ms cubic-bezier(.2,.9,.2,1) both, holoFlicker 7s ease-in-out infinite;",
+    "}",
+    ".mobile-panel-materialize {",
+    "animation: mobilePanelMaterialize 420ms cubic-bezier(.2,.9,.2,1) both, holoFlicker 7s ease-in-out infinite;",
+    "}",
+    ".chamber-scrollbar::-webkit-scrollbar {",
+    "width: 4px;",
+    "height: 4px;",
+    "}",
+    ".chamber-scrollbar::-webkit-scrollbar-thumb {",
+    "background: rgba(196,150,42,.48);",
+    "border-radius: 999px;",
+    "}",
+    "@keyframes confettiFall {",
+    "0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }",
+    "80% { opacity: 0.7; }",
+    "100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }",
+    "}",
+    "@keyframes deepDiveEnter {",
+    "0% { opacity: 0; transform: translateY(32px); }",
+    "100% { opacity: 1; transform: translateY(0); }",
+    "}",
+    "@keyframes celebrationEnter {",
+    "0% { opacity: 0; transform: scale(0.94); }",
+    "100% { opacity: 1; transform: scale(1); }",
+    "}",
+    ".deep-dive-enter {",
+    "animation: deepDiveEnter 420ms cubic-bezier(.2,.9,.2,1) both;",
+    "}",
+    ".celebration-enter {",
+    "animation: celebrationEnter 500ms cubic-bezier(.2,.9,.2,1) both;",
+    "}",
+  ].join("\\n");
 
-      @keyframes panelMaterialize {
-        0% { opacity: 0; transform: translateY(22px) translateX(16px) scale(.96); filter: blur(14px); }
-        60% { opacity: .82; filter: blur(2px); }
-        100% { opacity: 1; transform: translateY(0) translateX(0) scale(1); filter: blur(0); }
-      }
-
-      @keyframes mobilePanelMaterialize {
-        0% { opacity: 0; transform: translateY(22px) scale(.98); filter: blur(12px); }
-        100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
-      }
-
-      @keyframes targetPing {
-        0% { opacity: .9; transform: scale(.84); }
-        70% { opacity: .18; transform: scale(1.2); }
-        100% { opacity: 0; transform: scale(1.3); }
-      }
-
-      @keyframes floorSpin {
-        from { transform: translate(-50%, -50%) rotate(0deg); }
-        to { transform: translate(-50%, -50%) rotate(360deg); }
-      }
-
-      @keyframes holoFlicker {
-        0%, 100% { opacity: .96; }
-        7% { opacity: .78; }
-        9% { opacity: 1; }
-        52% { opacity: .83; }
-        54% { opacity: .98; }
-      }
-
-      @keyframes gridPulse {
-        0%, 100% { opacity: .72; filter: brightness(1); }
-        50% { opacity: 1; filter: brightness(1.35); }
-      }
-
-      @keyframes beamBreathe {
-        0%, 100% { opacity: .48; transform: scaleX(.94); }
-        50% { opacity: .92; transform: scaleX(1); }
-      }
-
-      @keyframes reflectionBreathe {
-        0%, 100% { opacity: .48; transform: translateX(-50%) scaleY(-.38) scaleX(.96); }
-        50% { opacity: .72; transform: translateX(-50%) scaleY(-.43) scaleX(1.02); }
-      }
-
-      @keyframes holoShell {
-        0%, 100% { opacity: .34; transform: translate(-50%, -50%) scale(1); }
-        50% { opacity: .54; transform: translate(-50%, -50%) scale(1.018); }
-      }
-
-      .holo-globe-shell::before {
-        content: "";
-        position: absolute;
-        left: 50%;
-        top: 50%;
-        width: min(64vw, 620px);
-        height: min(64vw, 620px);
-        transform: translate(-50%, -50%);
-        border-radius: 9999px;
-        pointer-events: none;
-        z-index: 5;
-        will-change: transform, opacity;
-        background:
-          repeating-linear-gradient(
-            0deg,
-            rgba(196,150,42,0.14) 0px,
-            rgba(196,150,42,0.14) 1px,
-            transparent 2px,
-            transparent 7px
-          ),
-          radial-gradient(circle at 38% 32%, rgba(255,255,255,0.22), transparent 16%),
-          radial-gradient(circle, transparent 45%, rgba(196,150,42,0.16) 57%, rgba(196,150,42,0.18) 70%, transparent 74%);
-        mix-blend-mode: screen;
-        animation: holoShell 3.6s ease-in-out infinite;
-      }
-
-      .holo-globe-shell::after {
-        content: "";
-        position: absolute;
-        left: 50%;
-        top: 50%;
-        width: min(66vw, 650px);
-        height: min(66vw, 650px);
-        transform: translate(-50%, -50%);
-        border-radius: 9999px;
-        pointer-events: none;
-        z-index: 6;
-        border: 1px solid rgba(196,150,42,0.22);
-        box-shadow:
-          inset 0 0 38px rgba(196,150,42,0.10),
-          inset 0 0 70px rgba(196,150,42,0.08),
-          0 0 42px rgba(196,150,42,0.14),
-          0 0 82px rgba(196,150,42,0.10);
-      }
-
-      .panel-materialize {
-        animation: panelMaterialize 520ms cubic-bezier(.2,.9,.2,1) both, holoFlicker 7s ease-in-out infinite;
-      }
-
-      .mobile-panel-materialize {
-        animation: mobilePanelMaterialize 420ms cubic-bezier(.2,.9,.2,1) both, holoFlicker 7s ease-in-out infinite;
-      }
-
-      .chamber-scrollbar::-webkit-scrollbar {
-        width: 4px;
-        height: 4px;
-      }
-
-      .chamber-scrollbar::-webkit-scrollbar-thumb {
-        background: rgba(196,150,42,.48);
-        border-radius: 999px;
-      }
-
-      @keyframes confettiFall {
-        0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }
-        80% { opacity: 0.7; }
-        100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
-      }
-
-      @keyframes deepDiveEnter {
-        0% { opacity: 0; transform: translateY(32px); }
-        100% { opacity: 1; transform: translateY(0); }
-      }
-
-      @keyframes celebrationEnter {
-        0% { opacity: 0; transform: scale(0.94); }
-        100% { opacity: 1; transform: scale(1); }
-      }
-
-      .deep-dive-enter {
-        animation: deepDiveEnter 420ms cubic-bezier(.2,.9,.2,1) both;
-      }
-
-      .celebration-enter {
-        animation: celebrationEnter 500ms cubic-bezier(.2,.9,.2,1) both;
-      }
-    `}</style>
-  );
+  return <style>{css}</style>;
 }
 
 function RoomBackground({ active }) {
