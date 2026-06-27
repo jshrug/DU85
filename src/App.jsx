@@ -3113,7 +3113,7 @@ function DestinationChamber({
             pointAltitude={(d) => d.size}
             pointRadius={0.18}
             pointColor={(d) => d.color}
-            pointLabel={(d) => `${countryIcon(d)} ${d.name}<br/>${d.note}`}
+            pointLabel={(d) => countryIcon(d) + " " + d.name + "<br/>" + d.note}
             onPointClick={handlePointClick}
             ringsData={rings}
             ringLat={(d) => d.lat}
