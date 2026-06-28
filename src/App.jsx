@@ -700,7 +700,7 @@ function Shell({ children, drawerOpen, setDrawerOpen }) {
           />
         )}
 
-        <div className={chamberMode ? "relative z-10 min-h-screen" : "relative z-10 max-w-7xl mx-auto min-h-screen pb-24"}>
+        <div className={chamberMode ? "" : "relative z-10 max-w-7xl mx-auto min-h-screen pb-24"}>
           {!chamberMode && <TopBar onOpenDrawer={() => setDrawerOpen(true)} />}
           {children}
         </div>
@@ -2916,7 +2916,7 @@ function DestinationChamber({
   }
 
   return (
-    <section className="chamber-root relative w-screen overflow-hidden text-white bg-[#080700]">
+    <section className="relative w-full overflow-hidden text-white bg-[#080700]" style={{ height: "100%" }}>
       <ChamberCss />
       <RoomBackground active={Boolean(activeCountry)} />
 
@@ -3320,11 +3320,6 @@ function ChamberCss() {
 
       .mobile-panel-materialize {
         animation: mobilePanelMaterialize 420ms cubic-bezier(.2,.9,.2,1) both, holoFlicker 7s ease-in-out infinite;
-      }
-
-      .chamber-root {
-        height: 100vh;
-        height: 100dvh;
       }
 
       .chamber-scrollbar::-webkit-scrollbar {
