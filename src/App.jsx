@@ -2916,7 +2916,7 @@ function DestinationChamber({
   }
 
   return (
-    <section className="relative w-screen overflow-hidden text-white bg-[#080700]" style={{ height: "100dvh" }}>
+    <section className="chamber-root relative w-screen overflow-hidden text-white bg-[#080700]">
       <ChamberCss />
       <RoomBackground active={Boolean(activeCountry)} />
 
@@ -3320,6 +3320,11 @@ function ChamberCss() {
 
       .mobile-panel-materialize {
         animation: mobilePanelMaterialize 420ms cubic-bezier(.2,.9,.2,1) both, holoFlicker 7s ease-in-out infinite;
+      }
+
+      .chamber-root {
+        height: 100vh;
+        height: 100dvh;
       }
 
       .chamber-scrollbar::-webkit-scrollbar {
