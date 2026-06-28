@@ -700,7 +700,7 @@ function Shell({ children, drawerOpen, setDrawerOpen }) {
           />
         )}
 
-        <div className={chamberMode ? "" : "relative z-10 max-w-7xl mx-auto min-h-screen pb-24"}>
+        <div className={chamberMode ? "relative z-10 min-h-screen" : "relative z-10 max-w-7xl mx-auto min-h-screen pb-24"}>
           {!chamberMode && <TopBar onOpenDrawer={() => setDrawerOpen(true)} />}
           {children}
         </div>
@@ -2916,7 +2916,7 @@ function DestinationChamber({
   }
 
   return (
-    <section className="relative w-full overflow-hidden text-white bg-[#080700]" style={{ height: "100%" }}>
+    <section className="absolute inset-0 overflow-hidden text-white bg-[#080700]">
       <ChamberCss />
       <RoomBackground active={Boolean(activeCountry)} />
 
