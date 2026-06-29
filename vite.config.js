@@ -18,17 +18,6 @@ export default defineConfig({
           if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/')) {
             return 'react-vendor'
           }
-
-          if (
-            id.includes('node_modules/three/') ||
-            id.includes('node_modules/three-globe/') ||
-            id.includes('node_modules/react-globe.gl/') ||
-            id.includes('node_modules/@tweenjs/') ||
-            id.includes('node_modules/d3') ||
-            id.includes('node_modules/topojson')
-          ) {
-            return 'globe-vendor'
-          }
         },
       },
     },
