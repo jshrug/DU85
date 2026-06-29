@@ -364,6 +364,11 @@ HOW TO USE THIS DATA:
 - Always clarify: prior visit history shows what is possible, not what is confirmed for Cohort 85
 
 ──────────────────────────────────────────────
+CITY CHAMPIONS
+──────────────────────────────────────────────
+Each City A option has a champion team — a small group of cohort members assigned to research that city, submit a brief to Porter, and present for 5 minutes on July 10. Champion assignments were announced June 26. Teams are listed in the app under the Champions page. Porter does not yet have the specific team member names — they will be added once confirmed.
+
+──────────────────────────────────────────────
 COUNTRY BRIEF PROCESS
 ──────────────────────────────────────────────
 On June 26, 2026, Cohort 85 will be assigned teams and each team will be assigned a specific country to research and present. City A briefs are due to Porter by July 8, 2026. City B briefs are due July 15, 2026.
