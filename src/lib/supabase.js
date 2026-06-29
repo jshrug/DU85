@@ -12,7 +12,9 @@ export function getOrCreateUserId() {
   if (typeof window === "undefined") return "server";
   let id = localStorage.getItem("g85_user_id");
   if (!id) {
-    id = crypto.randomUUID();
+    id = typeof crypto?.randomUUID === "function"
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2) + Date.now().toString(36);
     localStorage.setItem("g85_user_id", id);
   }
   return id;

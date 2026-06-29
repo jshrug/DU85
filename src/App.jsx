@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Globe from "react-globe.gl";
 import * as THREE from "three";
@@ -2092,6 +2092,22 @@ function hasTieAtPosition(voteMap, position) {
   return getTiedCitiesForPosition(voteMap, position).length > 1;
 }
 
+class VotesErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { err: null }; }
+  static getDerivedStateFromError(e) { return { err: e?.message || String(e) }; }
+  render() {
+    if (this.state.err) {
+      return createPortal(
+        <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 99999, background: "#0d0004", color: "#ff7070", padding: "20px", fontFamily: "monospace", fontSize: "14px", overflow: "auto" }}>
+          <strong>Votes error — send this to the dev:</strong><br />{this.state.err}
+        </div>,
+        document.body
+      );
+    }
+    return this.props.children;
+  }
+}
+
 function VotesPage() {
   // Mission index 0-5:
   // 0 = anchor-longlist, 1 = anchor-runoff (optional), 2 = anchor-final
@@ -2541,7 +2557,7 @@ function VotesPage() {
   const activeVoteCount = Object.values(activeMission?.votes || {}).reduce((s, n) => s + n, 0);
 
   return createPortal(
-    <main style={{ position: "fixed", inset: 0, zIndex: 9999, overflow: "hidden" }}>
+    <main className="fixed inset-0 overflow-hidden" style={{ zIndex: 9999 }}>
       <DestinationChamber
         missions={missions}
         missionIndex={missionIndex}
@@ -4973,7 +4989,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<HomePage onAsk={() => navigate("/porter")} />} />
           <Route path="/porter" element={<PorterPage />} />
-          <Route path="/votes" element={<VotesPage />} />
+          <Route path="/votes" element={<VotesErrorBoundary><VotesPage /></VotesErrorBoundary>} />
           <Route path="/events" element={<EventsPage />} />
           <Route path="/tools" element={<ToolsPage />} />
 
