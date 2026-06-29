@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Globe from "react-globe.gl";
 import * as THREE from "three";
 import { Routes, Route, Navigate, NavLink, useNavigate, useLocation } from "react-router-dom";
@@ -2539,8 +2540,8 @@ function VotesPage() {
   const activeMission = missions[Math.min(missionIndex, missions.length - 1)];
   const activeVoteCount = Object.values(activeMission?.votes || {}).reduce((s, n) => s + n, 0);
 
-  return (
-    <main className="fixed inset-0 z-[999] overflow-hidden">
+  return createPortal(
+    <main style={{ position: "fixed", inset: 0, zIndex: 9999, overflow: "hidden" }}>
       <DestinationChamber
         missions={missions}
         missionIndex={missionIndex}
@@ -2556,7 +2557,8 @@ function VotesPage() {
         onReset={resetProtocol}
         onDismissCelebration={() => setShowCelebration(false)}
       />
-    </main>
+    </main>,
+    document.body
   );
 }
 
@@ -2916,7 +2918,7 @@ function DestinationChamber({
   }
 
   return (
-    <section className="relative w-screen overflow-hidden text-white bg-[#080700]" style={{ height: `${globeSize.height}px` }}>
+    <section className="relative w-screen overflow-hidden text-white bg-[#080700]" style={{ height: `${globeSize.height}px`, minHeight: "100vh" }}>
       <ChamberCss />
       <RoomBackground active={Boolean(activeCountry)} />
 
