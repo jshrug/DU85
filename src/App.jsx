@@ -607,6 +607,15 @@ const COHORT_EVENTS = [
     badge: "Required",
   },
   {
+    id: "cohort-oh-1",
+    source: "Teams Call",
+    title: "Open Office Hours",
+    date: "Jul 5",
+    fullDate: new Date("2026-07-05"),
+    detail: "8:00 – 8:45am. Open call to discuss destination options, voting, logistics, or anything else about the trip. No agenda — just show up with questions.",
+    badge: "Optional",
+  },
+  {
     id: "cohort-2",
     source: "Assignment Due",
     title: "City A Briefs Due to Porter",
@@ -623,6 +632,15 @@ const COHORT_EVENTS = [
     fullDate: new Date("2026-07-10"),
     detail: "5-min presentations per team, then anonymous vote through Porter. Top 2 City A finalists advance. If any city is within 1 vote of 1st or 2nd, a runoff fires on the spot. Both finalists carry forward — no head-to-head.",
     badge: "Required",
+  },
+  {
+    id: "cohort-oh-2",
+    source: "Teams Call",
+    title: "Open Office Hours",
+    date: "Jul 15",
+    fullDate: new Date("2026-07-15"),
+    detail: "8:00 – 8:45am. Open call to discuss destination options, voting, logistics, or anything else about the trip. No agenda — just show up with questions.",
+    badge: "Optional",
   },
   {
     id: "cohort-4",
