@@ -49,6 +49,7 @@ const DRAWER_NAV = [
   { to: "/porter", label: "Porter", icon: "🛎️", desc: "AI cohort concierge" },
   { to: "/events", label: "Plan + RSVP", icon: "📅", desc: "Official, vote-created, and classmate events" },
   { to: "/votes", label: "Votes", icon: "🗳️", desc: "Destination chamber and trip decisions" },
+  { to: "/champions", label: "Champions", icon: "🏙️", desc: "City research teams and assignments" },
   { to: "/explore", label: "Explore", icon: "🗺️", desc: "Food, places, and plans" },
   { to: "/tools", label: "Trip Tools", icon: "🛠️", desc: "Currency exchange and translation" },
   { to: "/chat", label: "Chat", icon: "💬", desc: "Cohort and team channels" },
@@ -56,6 +57,18 @@ const DRAWER_NAV = [
   { to: "/gallery", label: "Gallery", icon: "📷", desc: "Photos and memories" },
   { to: "/me", label: "Profile", icon: "👤", desc: "Preferences and saved places" },
 ];
+
+// City A champion teams — fill in after June 26 assignment session
+const CITY_CHAMPIONS = {
+  "Santiago":   null,
+  "Seoul":      null,
+  "Singapore":  null,
+  "Istanbul":   null,
+  "Lisbon":     null,
+  "Cape Town":  null,
+  "Nairobi":    null,
+  "Kigali":     null,
+};
 
 
 const DESTINATION_OPTIONS = [
@@ -2214,7 +2227,12 @@ function VotesPage() {
   const [anchorWinner, setAnchorWinner] = useState(null);
   const [companionWinner, setCompanionWinner] = useState(null);
   const [showCelebration, setShowCelebration] = useState(false);
+  const [briefs, setBriefs] = useState([]);
   const userId = useMemo(() => getOrCreateUserId(), []);
+
+  useEffect(() => {
+    fetchCountryBriefs().then(setBriefs).catch(() => {});
+  }, []);
 
   const anchorVotes = allVoteCounts["anchor-longlist"] || {};
   const anchorRunoffVotes = allVoteCounts["anchor-runoff"] || {};
@@ -2573,6 +2591,7 @@ function VotesPage() {
         onPorterPick={porterPick}
         onReset={resetProtocol}
         onDismissCelebration={() => setShowCelebration(false)}
+        briefs={briefs}
       />
     </main>
   );
@@ -2592,6 +2611,7 @@ function DestinationChamber({
   onPorterPick,
   onReset,
   onDismissCelebration,
+  briefs = [],
 }) {
   const navigate = useNavigate();
   const globeRef = useRef(null);
@@ -3060,6 +3080,7 @@ function DestinationChamber({
               onVote={() => activeCountry && onVote(activeCountry)}
               onAdvance={onAdvance}
               onDeepDive={openDeepDive}
+              briefs={briefs}
             />
           ) : (
             <EmptyCountryPrompt activeMission={activeMission} />
@@ -3087,6 +3108,7 @@ function DestinationChamber({
             onAdvance={onAdvance}
             canAdvance={activeMission.canAdvance}
             routeComplete={routeComplete}
+            briefs={briefs}
           />
         </div>
       )}
@@ -3109,6 +3131,7 @@ function DestinationChamber({
               onVote={() => activeCountry && onVote(activeCountry)}
               onAdvance={onAdvance}
               onDeepDive={openDeepDive}
+              briefs={briefs}
               mobile
             />
           )}
@@ -3122,6 +3145,7 @@ function DestinationChamber({
             onAdvance={onAdvance}
             canAdvance={activeMission.canAdvance}
             routeComplete={routeComplete}
+            briefs={briefs}
           />
         </div>
       )}
@@ -3683,9 +3707,12 @@ function FloatingIntelPanel({
   onVote,
   onAdvance,
   onDeepDive,
+  briefs = [],
   mobile = false,
 }) {
   if (!country) return null;
+  const cityAName = country.cityA?.name || country.name;
+  const brief = briefs.find((b) => b.country_name.toLowerCase() === cityAName.toLowerCase());
 
   return (
     <div
@@ -3785,6 +3812,21 @@ function FloatingIntelPanel({
             ))}
           </div>
         </div>
+
+        {brief && (
+          <div className="mt-4 rounded-3xl border p-4" style={{ background: "rgba(196,150,42,0.06)", borderColor: "rgba(196,150,42,0.22)" }}>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs uppercase tracking-[0.18em] font-black" style={{ color: COLORS.champagne }}>
+                Cohort brief submitted
+              </p>
+              <span className="text-[9px] uppercase tracking-[0.14em] font-black opacity-60">◆</span>
+            </div>
+            {brief.team_members && (
+              <p className="mt-1 text-[10px] text-white/45 uppercase tracking-[0.12em]">Team — {brief.team_members}</p>
+            )}
+            <p className="mt-2 text-sm leading-6 text-white/70 line-clamp-4">{brief.content}</p>
+          </div>
+        )}
 
         {!mobile && (() => {
           const cohorts = getCohortsForCity(country.name);
@@ -4412,6 +4454,7 @@ function DestinationConsole({
   onAdvance,
   canAdvance,
   routeComplete,
+  briefs = [],
 }) {
   return (
     <div
@@ -4467,6 +4510,8 @@ function DestinationConsole({
           const active = activeCountry?.name === country.name;
           const selected = selectedName === country.name;
           const finalist = finalistNames?.includes(country.name);
+          const cityAName = country.cityA?.name || country.name;
+          const hasBrief = briefs.some((b) => b.country_name.toLowerCase() === cityAName.toLowerCase());
 
           return (
             <button
@@ -4496,6 +4541,14 @@ function DestinationConsole({
               </div>
               <div className="mt-1 truncate text-sm font-black">{country.name}</div>
               <div className="truncate text-[10px] opacity-60">{country.region}</div>
+              {hasBrief && (
+                <div
+                  className="mt-1.5 rounded-full px-2 py-0.5 text-[8px] font-black uppercase tracking-[0.14em] inline-block"
+                  style={{ background: "rgba(196,150,42,0.18)", color: COLORS.champagne }}
+                >
+                  Brief ◆
+                </div>
+              )}
             </button>
           );
         })}
@@ -4554,6 +4607,104 @@ function MiniInfo({ label, value }) {
       </div>
       <div className="text-[9px] sm:text-[10px] uppercase tracking-wide text-white/35">{label}</div>
     </div>
+  );
+}
+
+function ChampionsPage() {
+  const cities = Object.keys(CITY_CHAMPIONS);
+  const assigned = cities.filter((c) => CITY_CHAMPIONS[c]);
+  const pending = cities.filter((c) => !CITY_CHAMPIONS[c]);
+
+  return (
+    <main className="px-5 py-5 pb-24">
+      <section
+        className="rounded-[2rem] p-5 border border-white/10"
+        style={{ background: `linear-gradient(135deg, rgba(196,150,42,0.08), rgba(0,0,0,0.3))`, borderColor: "rgba(196,150,42,0.18)" }}
+      >
+        <p className="text-[9px] uppercase tracking-[0.32em] font-black" style={{ color: COLORS.champagne }}>
+          Global 85 · Destination Research
+        </p>
+        <h1 className="mt-2 text-2xl font-black leading-tight" style={{ fontFamily: "Georgia, serif" }}>
+          City Champions
+        </h1>
+        <p className="mt-2 text-sm text-white/55 leading-5">
+          Each city has a champion team responsible for research, the brief submitted to Porter, and the 5-minute presentation on July 10.
+        </p>
+      </section>
+
+      <section className="mt-5 grid gap-3">
+        <SectionTitle eyebrow="City A options" title="Research teams" />
+        {cities.map((cityName) => {
+          const team = CITY_CHAMPIONS[cityName];
+          const country = ANCHOR_COUNTRIES.find((c) => c.name === cityName);
+          const cityBOptions = CITY_B_MAP[cityName] || [];
+
+          return (
+            <div
+              key={cityName}
+              className="rounded-[1.6rem] p-4 border"
+              style={{
+                background: team ? "rgba(196,150,42,0.06)" : "rgba(255,255,255,0.04)",
+                borderColor: team ? "rgba(196,150,42,0.22)" : "rgba(255,255,255,0.08)",
+              }}
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className="w-11 h-11 rounded-2xl flex items-center justify-center text-2xl shrink-0"
+                  style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)" }}
+                >
+                  {country ? countryIcon(country) : "🌐"}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-black text-white">{cityName}</h3>
+                    {team ? (
+                      <span
+                        className="text-[9px] uppercase tracking-[0.14em] font-black px-2 py-0.5 rounded-full"
+                        style={{ background: "rgba(196,150,42,0.18)", color: COLORS.champagne }}
+                      >
+                        Assigned
+                      </span>
+                    ) : (
+                      <span
+                        className="text-[9px] uppercase tracking-[0.14em] font-black px-2 py-0.5 rounded-full"
+                        style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.35)" }}
+                      >
+                        TBD
+                      </span>
+                    )}
+                  </div>
+                  {team ? (
+                    <p className="text-sm text-white/65 mt-0.5">{team}</p>
+                  ) : (
+                    <p className="text-xs text-white/30 mt-0.5 italic">Assignment pending</p>
+                  )}
+                  {cityBOptions.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {cityBOptions.map((b) => (
+                        <span
+                          key={b}
+                          className="rounded-full border px-2 py-0.5 text-[10px] font-bold"
+                          style={{ borderColor: "rgba(255,255,255,0.10)", color: "rgba(255,255,255,0.40)" }}
+                        >
+                          + {b}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </section>
+
+      {pending.length > 0 && (
+        <p className="mt-5 text-center text-xs text-white/25 uppercase tracking-[0.18em]">
+          {pending.length} assignment{pending.length !== 1 ? "s" : ""} pending · teams announced June 26
+        </p>
+      )}
+    </main>
   );
 }
 
@@ -4991,6 +5142,7 @@ export default function App() {
           <Route path="/votes" element={<VotesPage />} />
           <Route path="/events" element={<EventsPage />} />
           <Route path="/tools" element={<ToolsPage />} />
+          <Route path="/champions" element={<ChampionsPage />} />
 
           <Route
             path="/explore"
