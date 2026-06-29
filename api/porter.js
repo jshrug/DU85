@@ -124,6 +124,10 @@ BRIEF DUE DATES:
 - City A briefs due to Porter: July 8, 2026
 - City B briefs due to Porter: July 15, 2026
 
+OPEN OFFICE HOURS (Teams call, optional):
+- July 5, 2026: 8:00 – 8:45am — open call to discuss destination options, voting, logistics, or anything about the trip. No agenda.
+- July 15, 2026: 8:00 – 8:45am — same format. City B briefs also due this day.
+
 VOTING NOTES:
 - All votes are anonymous — Porter sees vote totals, not who voted for what
 - Porter announces results after each round
