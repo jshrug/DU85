@@ -57,14 +57,6 @@ const DRAWER_NAV = [
   { to: "/me", label: "Profile", icon: "👤", desc: "Preferences and saved places" },
 ];
 
-const SAMPLE_PROMPTS = [
-  "Which anchor + companion pairing would you recommend for Global 85?",
-  "Compare Japan and South Korea for a DU MBA business immersion.",
-  "What’s the best 10-day itinerary if we pick Spain as anchor?",
-  "Give me the top 3 company visit ideas for a tech-focused cohort.",
-  "What should we know about visas and logistics before we decide?",
-  "What’s the honest case against Japan given the cost and flight time?",
-];
 
 const DESTINATION_OPTIONS = [
   {
@@ -1621,7 +1613,7 @@ function PorterPage() {
           className="flex rounded-2xl p-1"
           style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
         >
-          {[["chat", "Briefing Room"], ["brief", "Dossier"]].map(([key, label]) => (
+          {[["chat", "Briefing Room"], ["brief", "Brief"]].map(([key, label]) => (
             <button
               key={key}
               onClick={() => setTab(key)}
@@ -1642,46 +1634,6 @@ function PorterPage() {
       {/* ── CHAT TAB ─────────────────────────────────────────── */}
       {tab === "chat" && (
         <div className="px-5 flex flex-col gap-4">
-          {/* Mission prompt tiles */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {SAMPLE_PROMPTS.map((prompt, i) => (
-              <button
-                key={prompt}
-                onClick={() => sendMessage(prompt)}
-                disabled={streaming}
-                className="group relative overflow-hidden text-left rounded-2xl p-4 border transition-all disabled:opacity-30"
-                style={{
-                  background: "rgba(255,255,255,0.028)",
-                  borderColor: "rgba(255,255,255,0.07)",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = "rgba(196,150,42,0.38)";
-                  e.currentTarget.style.background = "rgba(196,150,42,0.05)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = "rgba(255,255,255,0.07)";
-                  e.currentTarget.style.background = "rgba(255,255,255,0.028)";
-                }}
-              >
-                <div
-                  className="text-[8px] uppercase tracking-[0.30em] font-black mb-2"
-                  style={{ color: "rgba(243,213,138,0.34)" }}
-                >
-                  Query {String(i + 1).padStart(2, "0")}
-                </div>
-                <p className="text-sm text-white/60 leading-5 pr-5">
-                  {prompt}
-                </p>
-                <span
-                  className="absolute bottom-3.5 right-4 text-xs font-black opacity-0 group-hover:opacity-100 transition-opacity"
-                  style={{ color: COLORS.champagne }}
-                >
-                  →
-                </span>
-              </button>
-            ))}
-          </div>
-
           {/* Conversation panel */}
           <div
             className="relative rounded-[1.8rem] overflow-hidden flex flex-col"
@@ -1914,7 +1866,7 @@ function PorterPage() {
   );
 }
 
-function DossierField({ label, children }) {
+function BriefField({ label, children }) {
   return (
     <div>
       <div className="flex items-center gap-3 mb-2">
@@ -1946,17 +1898,34 @@ function CountryBriefTab({ briefs, onBriefSubmitted }) {
   async function handleFileUpload(e) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.name.endsWith(".docx")) {
-      setSubmitError("Only .docx files are supported.");
+    const isPdf = file.name.endsWith(".pdf");
+    const isDocx = file.name.endsWith(".docx") || file.name.endsWith(".doc");
+    if (!isPdf && !isDocx) {
+      setSubmitError("Only .docx or .pdf files are supported.");
       return;
     }
     setParsing(true);
     setSubmitError("");
     try {
       const arrayBuffer = await file.arrayBuffer();
-      const result = await mammoth.extractRawText({ arrayBuffer });
-      const extracted = result.value.trim();
-      if (!extracted) throw new Error("No text found in the document.");
+      let extracted = "";
+      if (isDocx) {
+        const result = await mammoth.extractRawText({ arrayBuffer });
+        extracted = result.value.trim();
+        if (!extracted) throw new Error("No text found in the document.");
+      } else {
+        // PDF: send to extraction endpoint
+        const b64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+        const res = await fetch("/api/extract-pdf", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: b64 }),
+        });
+        const data = await res.json();
+        if (!res.ok || data.error) throw new Error(data.error || "PDF extraction failed.");
+        extracted = data.text.trim();
+        if (!extracted) throw new Error("No text found in the PDF.");
+      }
       setContent(extracted);
       setParsedFileName(file.name);
     } catch (err) {
@@ -2007,7 +1976,7 @@ function CountryBriefTab({ briefs, onBriefSubmitted }) {
 
   return (
     <div className="px-5 flex flex-col gap-4">
-      {/* Dossier form */}
+      {/* Brief form */}
       <div
         className="relative rounded-[1.8rem] overflow-hidden"
         style={{ background: "rgba(4,3,1,0.68)", border: "1px solid rgba(196,150,42,0.16)" }}
@@ -2029,7 +1998,7 @@ function CountryBriefTab({ briefs, onBriefSubmitted }) {
               className="text-xl font-black"
               style={{ fontFamily: "Georgia, serif", color: "rgba(255,255,255,0.88)" }}
             >
-              Submit Dossier
+              Submit Brief
             </h2>
             <p className="text-[11px] text-white/38 mt-1 leading-4">
               Briefs due July 8 · Porter loads them automatically
@@ -2044,7 +2013,7 @@ function CountryBriefTab({ briefs, onBriefSubmitted }) {
         </div>
 
         <div className="px-5 pb-5 flex flex-col gap-4">
-          <DossierField label="Destination">
+          <BriefField label="Destination">
             <input
               value={countryName}
               onChange={(e) => setCountryName(e.target.value)}
@@ -2054,9 +2023,9 @@ function CountryBriefTab({ briefs, onBriefSubmitted }) {
               className="w-full rounded-xl px-4 py-2.5 text-sm placeholder:text-white/28"
               style={fieldStyle("country")}
             />
-          </DossierField>
+          </BriefField>
 
-          <DossierField label="Team">
+          <BriefField label="Team">
             <input
               value={teamMembers}
               onChange={(e) => setTeamMembers(e.target.value)}
@@ -2066,9 +2035,9 @@ function CountryBriefTab({ briefs, onBriefSubmitted }) {
               className="w-full rounded-xl px-4 py-2.5 text-sm placeholder:text-white/28"
               style={fieldStyle("team")}
             />
-          </DossierField>
+          </BriefField>
 
-          <DossierField label="Intelligence Brief">
+          <BriefField label="Intelligence Brief">
             {/* File upload strip */}
             <div className="flex items-center gap-3 mb-2">
               <button
@@ -2082,7 +2051,7 @@ function CountryBriefTab({ briefs, onBriefSubmitted }) {
                   color: COLORS.champagne,
                 }}
               >
-                {parsing ? "Reading…" : "Upload .docx"}
+                {parsing ? "Reading…" : "Upload .docx or .pdf"}
               </button>
               {parsedFileName && !parsing && (
                 <span className="text-[10px] text-white/38 truncate">{parsedFileName}</span>
@@ -2090,7 +2059,7 @@ function CountryBriefTab({ briefs, onBriefSubmitted }) {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                accept=".docx,.doc,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf"
                 onChange={handleFileUpload}
                 className="hidden"
               />
@@ -2100,7 +2069,7 @@ function CountryBriefTab({ briefs, onBriefSubmitted }) {
               onChange={(e) => setContent(e.target.value)}
               onFocus={() => setFocusedField("content")}
               onBlur={() => setFocusedField(null)}
-              placeholder="Paste your brief here, or upload a .docx above."
+              placeholder="Paste your brief here, or upload a .docx or .pdf above."
               rows={8}
               className="w-full rounded-xl px-4 py-3 text-sm leading-[1.7] resize-none placeholder:text-white/28"
               style={fieldStyle("content")}
@@ -2111,7 +2080,7 @@ function CountryBriefTab({ briefs, onBriefSubmitted }) {
             >
               No limit — feeds directly into Porter’s context
             </p>
-          </DossierField>
+          </BriefField>
 
           {submitError && (
             <p className="text-[11px] font-black" style={{ color: "#fca5a5" }}>{submitError}</p>
@@ -2124,7 +2093,7 @@ function CountryBriefTab({ briefs, onBriefSubmitted }) {
             >
               <span style={{ color: COLORS.gold }}>◆</span>
               <span className="text-[11px] font-black uppercase tracking-[0.14em]" style={{ color: COLORS.champagneLight }}>
-                Dossier transmitted. Porter has it.
+                Brief submitted. Porter has it.
               </span>
             </div>
           )}
