@@ -2236,112 +2236,6 @@ function VotesPage() {
     pushStateToSupabase({ mission_index: nextMissionIndex });
   }
 
-  const handleAdvance = useCallback(async function handleAdvance() {
-    if (!activeMission?.canAdvance) return;
-
-    // 0: anchor-longlist → check for tie → go to runoff (1) or skip to final (2)
-    if (missionIndex === 0) {
-      const tiedFor2nd = hasTieAtPosition(anchorVotes, 1);
-      const tiedFor1st = hasTieAtPosition(anchorVotes, 0);
-      if (tiedFor2nd || tiedFor1st) {
-        startRunoff(anchorVotes, "anchor-runoff", 1);
-      } else {
-        setMissionIndex(2);
-        pushStateToSupabase({ mission_index: 2 });
-      }
-      return;
-    }
-
-    // 1: anchor-runoff → go to anchor-final (2)
-    if (missionIndex === 1) {
-      setMissionIndex(2);
-      pushStateToSupabase({ mission_index: 2 });
-      return;
-    }
-
-    // 2: anchor-final → lock winner, clear companion votes, go to companion-longlist (3)
-    if (missionIndex === 2) {
-      const finalVotes = allVoteCounts["anchor-final"] || {};
-      const topName = Object.entries(finalVotes).sort((a, b) => b[1] - a[1])[0]?.[0] || anchorWinner?.name;
-      const winner = topName ? getCountryByName(topName) : anchorFinalists[0];
-      if (winner) {
-        setAnchorWinner(winner);
-        setAllVoteCounts((prev) => {
-          const next = { ...prev };
-          delete next["companion-longlist"];
-          delete next["companion-runoff"];
-          delete next["companion-final"];
-          return next;
-        });
-        setMyVotes((prev) => {
-          const next = { ...prev };
-          delete next["companion-longlist"];
-          delete next["companion-runoff"];
-          delete next["companion-final"];
-          return next;
-        });
-        setMissionIndex(3);
-        pushStateToSupabase({ mission_index: 3, anchor_winner: winner.name });
-        if (supabase) {
-          supabase
-            .from("cohort_votes")
-            .delete()
-            .eq("cohort_id", COHORT_ID)
-            .in("vote_phase", ["companion-longlist", "companion-runoff", "companion-final"])
-            .then(() => {});
-        }
-      }
-      return;
-    }
-
-    // 3: companion-longlist → check for tie → go to runoff (4) or skip to final (5)
-    if (missionIndex === 3) {
-      const tiedFor2nd = hasTieAtPosition(companionVotes, 1);
-      const tiedFor1st = hasTieAtPosition(companionVotes, 0);
-      if (tiedFor2nd || tiedFor1st) {
-        startRunoff(companionVotes, "companion-runoff", 4);
-      } else {
-        setMissionIndex(5);
-        pushStateToSupabase({ mission_index: 5 });
-      }
-      return;
-    }
-
-    // 4: companion-runoff → go to companion-final (5)
-    if (missionIndex === 4) {
-      setMissionIndex(5);
-      pushStateToSupabase({ mission_index: 5 });
-      return;
-    }
-
-    // 5: companion-final → lock destination
-    if (missionIndex === 5) {
-      const finalVotes = allVoteCounts["companion-final"] || {};
-      const topName = Object.entries(finalVotes).sort((a, b) => b[1] - a[1])[0]?.[0] || companionWinner?.name;
-      const winner = topName ? getCountryByName(topName) : companionFinalists[0];
-      if (winner) {
-        setCompanionWinner(winner);
-        setShowCelebration(true);
-        pushStateToSupabase({ companion_winner: winner.name });
-      }
-    }
-  }, [missionIndex, activeMission, anchorVotes, anchorFinalists, companionVotes, companionFinalists, anchorWinner, companionWinner, allVoteCounts]);
-
-  // Auto-advance when all COHORT_SIZE votes are in for the active phase.
-  // A ref guards against firing twice if the count briefly hits 16 during a re-render.
-  const autoAdvancedForPhase = useRef(null);
-  useEffect(() => {
-    const phase = activeMission?.mode;
-    if (!phase || !activeMission?.canAdvance) return;
-    // Don't auto-advance the final missions — those lock the destination; keep that explicit.
-    if (phase === "anchor-final" || phase === "companion-final") return;
-    const voteCount = Object.values(activeMission.votes || {}).reduce((s, n) => s + n, 0);
-    if (voteCount >= COHORT_SIZE && autoAdvancedForPhase.current !== phase) {
-      autoAdvancedForPhase.current = phase;
-      handleAdvance();
-    }
-  }, [activeMission, handleAdvance]);
-
   function handleMissionJump(index) {
     if (index <= missionIndex) setMissionIndex(index);
   }
@@ -2538,6 +2432,112 @@ function VotesPage() {
 
   const activeMission = missions[Math.min(missionIndex, missions.length - 1)];
   const activeVoteCount = Object.values(activeMission?.votes || {}).reduce((s, n) => s + n, 0);
+
+  const handleAdvance = useCallback(async function handleAdvance() {
+    if (!activeMission?.canAdvance) return;
+
+    // 0: anchor-longlist → check for tie → go to runoff (1) or skip to final (2)
+    if (missionIndex === 0) {
+      const tiedFor2nd = hasTieAtPosition(anchorVotes, 1);
+      const tiedFor1st = hasTieAtPosition(anchorVotes, 0);
+      if (tiedFor2nd || tiedFor1st) {
+        startRunoff(anchorVotes, "anchor-runoff", 1);
+      } else {
+        setMissionIndex(2);
+        pushStateToSupabase({ mission_index: 2 });
+      }
+      return;
+    }
+
+    // 1: anchor-runoff → go to anchor-final (2)
+    if (missionIndex === 1) {
+      setMissionIndex(2);
+      pushStateToSupabase({ mission_index: 2 });
+      return;
+    }
+
+    // 2: anchor-final → lock winner, clear companion votes, go to companion-longlist (3)
+    if (missionIndex === 2) {
+      const finalVotes = allVoteCounts["anchor-final"] || {};
+      const topName = Object.entries(finalVotes).sort((a, b) => b[1] - a[1])[0]?.[0] || anchorWinner?.name;
+      const winner = topName ? getCountryByName(topName) : anchorFinalists[0];
+      if (winner) {
+        setAnchorWinner(winner);
+        setAllVoteCounts((prev) => {
+          const next = { ...prev };
+          delete next["companion-longlist"];
+          delete next["companion-runoff"];
+          delete next["companion-final"];
+          return next;
+        });
+        setMyVotes((prev) => {
+          const next = { ...prev };
+          delete next["companion-longlist"];
+          delete next["companion-runoff"];
+          delete next["companion-final"];
+          return next;
+        });
+        setMissionIndex(3);
+        pushStateToSupabase({ mission_index: 3, anchor_winner: winner.name });
+        if (supabase) {
+          supabase
+            .from("cohort_votes")
+            .delete()
+            .eq("cohort_id", COHORT_ID)
+            .in("vote_phase", ["companion-longlist", "companion-runoff", "companion-final"])
+            .then(() => {});
+        }
+      }
+      return;
+    }
+
+    // 3: companion-longlist → check for tie → go to runoff (4) or skip to final (5)
+    if (missionIndex === 3) {
+      const tiedFor2nd = hasTieAtPosition(companionVotes, 1);
+      const tiedFor1st = hasTieAtPosition(companionVotes, 0);
+      if (tiedFor2nd || tiedFor1st) {
+        startRunoff(companionVotes, "companion-runoff", 4);
+      } else {
+        setMissionIndex(5);
+        pushStateToSupabase({ mission_index: 5 });
+      }
+      return;
+    }
+
+    // 4: companion-runoff → go to companion-final (5)
+    if (missionIndex === 4) {
+      setMissionIndex(5);
+      pushStateToSupabase({ mission_index: 5 });
+      return;
+    }
+
+    // 5: companion-final → lock destination
+    if (missionIndex === 5) {
+      const finalVotes = allVoteCounts["companion-final"] || {};
+      const topName = Object.entries(finalVotes).sort((a, b) => b[1] - a[1])[0]?.[0] || companionWinner?.name;
+      const winner = topName ? getCountryByName(topName) : companionFinalists[0];
+      if (winner) {
+        setCompanionWinner(winner);
+        setShowCelebration(true);
+        pushStateToSupabase({ companion_winner: winner.name });
+      }
+    }
+  }, [missionIndex, activeMission, anchorVotes, anchorFinalists, companionVotes, companionFinalists, anchorWinner, companionWinner, allVoteCounts]);
+
+  // Auto-advance when all COHORT_SIZE votes are in for the active phase.
+  // A ref guards against firing twice if the count briefly hits 16 during a re-render.
+  const autoAdvancedForPhase = useRef(null);
+  useEffect(() => {
+    const phase = activeMission?.mode;
+    if (!phase || !activeMission?.canAdvance) return;
+    // Don't auto-advance the final missions — those lock the destination; keep that explicit.
+    if (phase === "anchor-final" || phase === "companion-final") return;
+    const voteCount = Object.values(activeMission.votes || {}).reduce((s, n) => s + n, 0);
+    if (voteCount >= COHORT_SIZE && autoAdvancedForPhase.current !== phase) {
+      autoAdvancedForPhase.current = phase;
+      handleAdvance();
+    }
+  }, [activeMission, handleAdvance]);
 
   return (
     <main className="fixed inset-0 z-[999] overflow-hidden">
