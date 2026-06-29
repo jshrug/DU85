@@ -629,7 +629,7 @@ const COHORT_EVENTS = [
     title: "City A Presentations + Vote",
     date: "Jul 10",
     fullDate: new Date("2026-07-10"),
-    detail: "30-min presentations per team, 10-min Q&A, 10-min break, then anonymous vote through Porter. Top 2 City A finalists advance. If any city is within 1 vote of 1st or 2nd, a runoff fires on the spot. Both finalists carry forward — no head-to-head.",
+    detail: "5-min presentations per team, then anonymous vote through Porter. Top 2 City A finalists advance. If any city is within 1 vote of 1st or 2nd, a runoff fires on the spot. Both finalists carry forward — no head-to-head.",
     badge: "Required",
   },
   {
