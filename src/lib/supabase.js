@@ -65,7 +65,24 @@ export function getOrCreateUserId() {
   ALTER TABLE porter_memory ENABLE ROW LEVEL SECURITY;
   CREATE POLICY "public_rw" ON porter_memory FOR ALL USING (true) WITH CHECK (true);
 
-  -- NOTE: The cohort_state mission_index now supports values 0–5:
+  -- Porter persistent conversation history (one row per user)
+  CREATE TABLE IF NOT EXISTS porter_conversations (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    cohort_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    messages JSONB NOT NULL DEFAULT '[]',
+    updated_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE (cohort_id, user_id)
+  );
+  ALTER TABLE porter_conversations ENABLE ROW LEVEL SECURITY;
+  CREATE POLICY "public_rw" ON porter_conversations FOR ALL USING (true) WITH CHECK (true);
+
+  -- NOTE: The cohort_state mission_index now supports values 0–3:
+  --   0 = anchor-longlist, 1 = anchor-runoff (optional),
+  --   2 = combo-vote, 3 = combo-runoff (optional)
+  -- (Replaces the old 0–5 six-mission system)
+
+  -- OLD NOTE (superseded): The cohort_state mission_index now supports values 0–5:
   --   0 = anchor-longlist, 1 = anchor-runoff (optional), 2 = anchor-final,
   --   3 = companion-longlist, 4 = companion-runoff (optional), 5 = companion-final
 

@@ -6,7 +6,9 @@ import SplashScreen from "./components/SplashScreen.jsx";
 import { supabase, COHORT_ID, getOrCreateUserId } from "./lib/supabase.js";
 import { DEEP_DIVE } from "./data/countryDeepDive.js";
 import { useAuth } from "./lib/AuthContext.jsx";
-import { fetchCountryBriefs, submitCountryBrief } from "./lib/porterMemory.js";
+import { fetchCountryBriefs, submitCountryBrief, loadConversation, saveConversation } from "./lib/porterMemory.js";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import mammoth from "mammoth";
 import {
   getFreshnessLabel,
@@ -615,37 +617,37 @@ const COHORT_EVENTS = [
   {
     id: "cohort-2",
     source: "Assignment Due",
-    title: "Presentation Briefing Due",
+    title: "City A Briefs Due to Porter",
     date: "Jul 8",
     fullDate: new Date("2026-07-08"),
-    detail: "Each presentation team submits their briefing document to Joseph before class.",
+    detail: "City A champion teams submit their country brief to Porter before class on July 10.",
     badge: "Due",
   },
   {
     id: "cohort-3",
     source: "Class Session",
     title: "City A Presentations + Vote",
-    date: "Jul 11",
-    fullDate: new Date("2026-07-11"),
-    detail: "30-min presentations per team, 10-min Q&A, 10-min break, then anonymous vote through Porter. Porter tallies results, announces top 2, and runs any tiebreaker runoff on the spot. Top 2 advance to the City A final vote.",
+    date: "Jul 10",
+    fullDate: new Date("2026-07-10"),
+    detail: "30-min presentations per team, 10-min Q&A, 10-min break, then anonymous vote through Porter. Top 2 City A finalists advance. If any city is within 1 vote of 1st or 2nd, a runoff fires on the spot. Both finalists carry forward — no head-to-head.",
     badge: "Required",
   },
   {
     id: "cohort-4",
     source: "Assignment Due",
-    title: "City B Briefing Due",
+    title: "City B Briefs Due to Porter",
     date: "Jul 15",
     fullDate: new Date("2026-07-15"),
-    detail: "Each presentation team submits their City B briefing document to Porter before class.",
+    detail: "City B champion teams submit their brief to Porter before the combo vote on July 18.",
     badge: "Due",
   },
   {
     id: "cohort-5",
     source: "Class Session",
-    title: "City B Presentations + Vote",
+    title: "Combo Vote — Lock City A + City B",
     date: "Jul 18",
     fullDate: new Date("2026-07-18"),
-    detail: "Same format as City A: 30-min presentations, 10-min Q&A, 10-min break, anonymous vote through Porter. Porter tallies results and announces the winning City B. Up to 2 cities advance to the City B final vote.",
+    detail: "Same presentation format for City B. The two City A finalists each bring their City B pairings. Cohort votes on one City A + City B combo. The winner locks both cities. If top two combos are within 2 votes, a runoff decides it.",
     badge: "Required",
   },
 ];
@@ -672,6 +674,55 @@ function getTopCountries(options, votes, count = 2) {
   const backups = options.filter((country) => !voteNames.includes(country.name));
 
   return uniqueByName([...selected, ...backups]).slice(0, count);
+}
+
+// Returns true if top two anchor candidates are within `n` votes of each other at a given position
+function withinN(votes, position, n) {
+  const sorted = Object.entries(votes).sort((a, b) => b[1] - a[1]);
+  if (sorted.length <= position + 1) return false;
+  return sorted[position][1] - sorted[position + 1][1] <= n;
+}
+
+// Anchor-longlist runoff trigger: within 1 vote at 1st OR 2nd place
+function needsAnchorRunoff(votes) {
+  return withinN(votes, 0, 1) || withinN(votes, 1, 1);
+}
+
+// Combo-vote runoff trigger: top two combos within 2 votes
+function needsComboRunoff(votes) {
+  return withinN(votes, 0, 2);
+}
+
+// Build combo objects from anchor finalists × their City B options
+function buildCombos(finalists) {
+  const combos = [];
+  finalists.forEach((cityA, i) => {
+    const bNames = CITY_B_MAP[cityA.name] || [];
+    bNames.forEach((bName, j) => {
+      const cityB = getCountryByName(bName);
+      if (!cityB) return;
+      combos.push({
+        name: `${cityA.name} + ${bName}`,
+        cityA,
+        cityB,
+        region: cityA.region,
+        flag: cityA.flag,
+        emoji: cityA.emoji,
+        // Slight position offset so multiple combos from same City A don't stack on globe
+        lat: cityA.lat + j * 0.8,
+        lng: cityA.lng + j * 0.8,
+        score: cityA.score,
+        image: cityA.image,
+        fit: cityA.fit,
+        cost: cityA.cost,
+        travel: cityA.travel,
+        reasons: cityA.reasons,
+        note: `${cityA.name} + ${bName}`,
+        porter: `${cityA.porter} Paired with ${bName}: ${cityB.porter}`,
+      });
+    });
+  });
+  return combos;
 }
 
 function countryIcon(country) {
@@ -1348,34 +1399,64 @@ function PorterBellRings({ streaming }) {
   );
 }
 
+const PORTER_INITIAL_MESSAGE = {
+  role: "assistant",
+  text: "I’m Porter — Global 85’s private concierge. Before I start throwing city picks at you, tell me: what do you actually want out of this trip? What’s your track, what industries excite you, and what would make this feel like a once-in-a-career experience for you specifically? The more you share, the sharper I can make the picks.",
+};
+
 function PorterPage() {
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const fileInputRef = useRef(null);
+  const userId = useMemo(() => getOrCreateUserId(), []);
   const [tab, setTab] = useState("chat");
-  const [messages, setMessages] = useState([
-    {
-      role: "assistant",
-      text: "I’m Porter — Global 85’s private concierge. Before I start throwing city picks at you, tell me: what do you actually want out of this trip? What’s your track, what industries excite you, and what would make this feel like a once-in-a-career experience for you specifically? The more you share, the sharper I can make the picks.",
-    },
-  ]);
+  const [messages, setMessages] = useState([PORTER_INITIAL_MESSAGE]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState("");
   const [briefs, setBriefs] = useState([]);
+  const [attachment, setAttachment] = useState(null); // { filename, type: "text"|"pdf", content }
+  const [conversationLoaded, setConversationLoaded] = useState(false);
 
+  // Load persistent conversation and briefs on mount
   useEffect(() => {
     fetchCountryBriefs().then(setBriefs).catch(() => {});
-  }, []);
+    loadConversation(userId).then((saved) => {
+      if (saved && saved.length > 0) setMessages(saved);
+      setConversationLoaded(true);
+    }).catch(() => setConversationLoaded(true));
+  }, [userId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingText]);
 
+  async function handleFileSelect(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    const filename = file.name;
+
+    if (filename.endsWith(".docx") || filename.endsWith(".doc")) {
+      const buf = await file.arrayBuffer();
+      const result = await mammoth.extractRawText({ arrayBuffer: buf });
+      setAttachment({ filename, type: "text", content: result.value });
+    } else if (filename.endsWith(".pdf")) {
+      const buf = await file.arrayBuffer();
+      const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+      setAttachment({ filename, type: "pdf", content: b64 });
+    }
+  }
+
   async function sendMessage(text = input) {
     const clean = (typeof text === "string" ? text : input).trim();
     if (!clean || streaming) return;
 
-    const next = [...messages, { role: "user", text: clean }];
+    const pendingAttachment = attachment;
+    setAttachment(null);
+
+    const displayText = pendingAttachment ? `[${pendingAttachment.filename}]\n\n${clean}` : clean;
+    const next = [...messages, { role: "user", text: displayText }];
     setMessages(next);
     setInput("");
     setStreaming(true);
@@ -1388,6 +1469,7 @@ function PorterPage() {
         body: JSON.stringify({
           messages: next.map((m) => ({ role: m.role, text: m.text })),
           briefs,
+          ...(pendingAttachment && { attachment: pendingAttachment }),
         }),
       });
 
@@ -1413,9 +1495,13 @@ function PorterPage() {
         }
       }
 
-      setMessages((prev) => [...prev, { role: "assistant", text: accumulated || "No response — try again." }]);
+      const reply = { role: "assistant", text: accumulated || "No response — try again." };
+      const finalMessages = [...next, reply];
+      setMessages(finalMessages);
+      saveConversation(userId, finalMessages).catch(() => {});
     } catch {
-      setMessages((prev) => [...prev, { role: "assistant", text: "Porter hit a snag. Check that ANTHROPIC_API_KEY is set in Vercel env vars, then try again." }]);
+      const errMsg = { role: "assistant", text: "Porter hit a snag. Try again." };
+      setMessages((prev) => { const m = [...prev, errMsg]; saveConversation(userId, m).catch(() => {}); return m; });
     } finally {
       setStreaming(false);
       setStreamingText("");
@@ -1645,8 +1731,10 @@ function PorterPage() {
                             ))}
                           </div>
                         ) : (
-                          <p className="text-sm leading-[1.75] text-white/80 whitespace-pre-wrap">
-                            {msg.text}
+                          <div className="porter-prose text-sm leading-[1.75] text-white/80">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              {msg.text}
+                            </ReactMarkdown>
                             {msg.streaming && (
                               <span
                                 className="porter-cursor inline-block ml-0.5 align-middle"
@@ -1658,7 +1746,7 @@ function PorterPage() {
                                 }}
                               />
                             )}
-                          </p>
+                          </div>
                         )}
                       </div>
                       <div
@@ -1697,7 +1785,45 @@ function PorterPage() {
               className="p-3 shrink-0"
               style={{ borderTop: "1px solid rgba(196,150,42,0.10)" }}
             >
+              {/* Attachment indicator */}
+              {attachment && (
+                <div className="flex items-center gap-2 mb-2 px-1">
+                  <span className="text-[9px] uppercase tracking-[0.18em] font-black" style={{ color: COLORS.champagne }}>
+                    {attachment.filename}
+                  </span>
+                  <button
+                    onClick={() => setAttachment(null)}
+                    className="text-[9px] opacity-50 hover:opacity-100 transition-opacity"
+                    style={{ color: "rgba(255,255,255,0.6)" }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".docx,.doc,.pdf"
+                className="hidden"
+                onChange={handleFileSelect}
+              />
+
               <div className="flex gap-2 items-end">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={streaming}
+                  title="Attach file (.docx or .pdf)"
+                  className="shrink-0 rounded-2xl px-3 py-3 transition-all disabled:opacity-30"
+                  style={{
+                    background: attachment ? "rgba(196,150,42,0.15)" : "rgba(255,255,255,0.05)",
+                    border: `1px solid ${attachment ? "rgba(196,150,42,0.42)" : "rgba(196,150,42,0.18)"}`,
+                    color: attachment ? COLORS.champagne : "rgba(255,255,255,0.38)",
+                    fontSize: "1rem",
+                  }}
+                >
+                  📎
+                </button>
                 <textarea
                   ref={inputRef}
                   rows={1}
@@ -1739,7 +1865,7 @@ function PorterPage() {
                 className="text-[8px] uppercase tracking-[0.18em] mt-1.5 ml-1"
                 style={{ color: "rgba(255,255,255,0.16)" }}
               >
-                Enter to send · Shift+Enter for new line
+                Enter to send · Shift+Enter for new line · Attach .docx or .pdf
               </p>
             </div>
           </div>
@@ -2092,9 +2218,9 @@ function hasTieAtPosition(voteMap, position) {
 }
 
 function VotesPage() {
-  // Mission index 0-5:
-  // 0 = anchor-longlist, 1 = anchor-runoff (optional), 2 = anchor-final
-  // 3 = companion-longlist, 4 = companion-runoff (optional), 5 = companion-final
+  // Mission index 0-3:
+  // 0 = anchor-longlist, 1 = anchor-runoff (optional),
+  // 2 = combo-vote, 3 = combo-runoff (optional)
   const [missionIndex, setMissionIndex] = useState(0);
   const [allVoteCounts, setAllVoteCounts] = useState({});
   const [myVotes, setMyVotes] = useState({});
@@ -2105,8 +2231,8 @@ function VotesPage() {
 
   const anchorVotes = allVoteCounts["anchor-longlist"] || {};
   const anchorRunoffVotes = allVoteCounts["anchor-runoff"] || {};
-  const companionVotes = allVoteCounts["companion-longlist"] || {};
-  const companionRunoffVotes = allVoteCounts["companion-runoff"] || {};
+  const comboVotes = allVoteCounts["combo-vote"] || {};
+  const comboRunoffVotes = allVoteCounts["combo-runoff"] || {};
 
   function parseVotes(rows) {
     const counts = {};
@@ -2213,8 +2339,6 @@ function VotesPage() {
         .then(() => {});
     }
 
-    if (phase === "anchor-final") setAnchorWinner(country);
-    if (phase === "companion-final") setCompanionWinner(country);
   }
 
   function startRunoff(longlistVotes, runoffPhase, nextMissionIndex) {
@@ -2277,50 +2401,34 @@ function VotesPage() {
     return getTopCountries(ANCHOR_COUNTRIES, anchorVotes, 2);
   }, [anchorVotes, anchorRunoffVotes, missionIndex]);
 
-  // Compute anchor runoff candidates (cities tied for 1st or 2nd in longlist)
+  // Anchor runoff candidates — all cities within 1 vote of 1st or 2nd place
   const anchorRunoffCandidates = useMemo(() => {
     const entries = Object.entries(anchorVotes).sort((a, b) => b[1] - a[1]);
     if (entries.length < 2) return entries.map(([name]) => getCountryByName(name)).filter(Boolean);
-    const secondScore = entries[1]?.[1];
-    const firstScore = entries[0]?.[1];
-    // If tie for 1st, include all tied for 1st; otherwise include all tied for 2nd
-    const tiedScore = firstScore === secondScore ? firstScore : secondScore;
-    const relevantNames = entries.filter(([, score]) => score === tiedScore).map(([name]) => name);
-    return relevantNames.map(getCountryByName).filter(Boolean);
+    const firstScore = entries[0][1];
+    const secondScore = entries[1][1];
+    let candidates;
+    if (firstScore - secondScore <= 1) {
+      // Close at 1st: all within 1 of top score
+      candidates = entries.filter(([, s]) => s >= firstScore - 1).map(([n]) => n);
+    } else {
+      // 1st is clear; check if 2nd and 3rd are within 1
+      const thirdScore = entries[2]?.[1];
+      candidates = (thirdScore !== undefined && secondScore - thirdScore <= 1)
+        ? entries.slice(1).filter(([, s]) => s >= secondScore - 1).map(([n]) => n)
+        : entries.slice(0, 2).map(([n]) => n);
+    }
+    return candidates.map(getCountryByName).filter(Boolean);
   }, [anchorVotes]);
 
-  const companionOptions = useMemo(
-    () => buildCompanionOptions(anchorWinner?.name || anchorFinalists[0]?.name || "Santiago"),
-    [anchorFinalists, anchorWinner]
-  );
+  // Combo options — all A+B pairs from the two anchor finalists' City B lists
+  const comboOptions = useMemo(() => buildCombos(anchorFinalists), [anchorFinalists]);
 
-  // Compute companion finalists — accounts for runoff results
-  const companionFinalists = useMemo(() => {
-    if (missionIndex >= 5 && Object.keys(companionRunoffVotes).length > 0) {
-      const sortedLonglist = Object.entries(companionVotes).sort((a, b) => b[1] - a[1]);
-      const firstScore = sortedLonglist[0]?.[1];
-      const secondScore = sortedLonglist[1]?.[1];
-      const runoffWinner = Object.entries(companionRunoffVotes).sort((a, b) => b[1] - a[1])[0]?.[0];
-      if (firstScore === secondScore) {
-        const runoffNames = sortedLonglist.filter(([, s]) => s === firstScore).map(([n]) => n);
-        const autoAdvance = sortedLonglist.find(([name]) => !runoffNames.includes(name))?.[0];
-        return uniqueByName([runoffWinner, autoAdvance].filter(Boolean).map(getCountryByName).filter(Boolean));
-      }
-      return uniqueByName([sortedLonglist[0]?.[0], runoffWinner].filter(Boolean).map(getCountryByName).filter(Boolean));
-    }
-    return getTopCountries(companionOptions, companionVotes, 2);
-  }, [companionOptions, companionVotes, companionRunoffVotes, missionIndex]);
-
-  // Compute companion runoff candidates
-  const companionRunoffCandidates = useMemo(() => {
-    const entries = Object.entries(companionVotes).sort((a, b) => b[1] - a[1]);
-    if (entries.length < 2) return entries.map(([name]) => getCountryByName(name)).filter(Boolean);
-    const secondScore = entries[1]?.[1];
-    const firstScore = entries[0]?.[1];
-    const tiedScore = firstScore === secondScore ? firstScore : secondScore;
-    const relevantNames = entries.filter(([, score]) => score === tiedScore).map(([name]) => name);
-    return relevantNames.map(getCountryByName).filter(Boolean);
-  }, [companionVotes]);
+  // Combo runoff candidates — top 2 combos from combo-vote
+  const comboRunoffCandidates = useMemo(() => {
+    const entries = Object.entries(comboVotes).sort((a, b) => b[1] - a[1]);
+    return entries.slice(0, 2).map(([name]) => comboOptions.find(c => c.name === name)).filter(Boolean);
+  }, [comboVotes, comboOptions]);
 
   const missions = useMemo(
     () => [
@@ -2331,12 +2439,12 @@ function VotesPage() {
         shortTitle: "City A",
         mode: "anchor-longlist",
         status: missionIndex === 0 ? "active" : "complete",
-        instruction: "Pick the city that should anchor the Global 85 trip. The two most-voted advance. If there's a close call, a runoff vote runs on the spot.",
+        instruction: "Pick the city that anchors Global 85. The two most-voted advance. If any city is within one vote of 1st or 2nd, a runoff fires on the spot. Both finalists carry forward.",
         options: ANCHOR_COUNTRIES,
         votes: anchorVotes,
         selectedName: myVotes["anchor-longlist"],
         voteLabel: "Cast Vote",
-        nextLabel: hasTieAtPosition(anchorVotes, 0) || hasTieAtPosition(anchorVotes, 1) ? "Tied — Start Runoff" : "Advance Top Two",
+        nextLabel: needsAnchorRunoff(anchorVotes) ? "Close — Start Runoff" : "Advance Top Two",
         canAdvance: Object.keys(anchorVotes).length > 0,
         finalistNames: anchorFinalists.map((c) => c.name),
       },
@@ -2347,86 +2455,51 @@ function VotesPage() {
         shortTitle: "Runoff A",
         mode: "anchor-runoff",
         status: missionIndex < 1 ? "locked" : missionIndex === 1 ? "active" : "complete",
-        instruction: "Tied cities from Vote 01 — one more vote to break the tie. Winner joins the top city to form the final two.",
+        instruction: "Close race — one more vote to settle it. The winner secures a finalist spot alongside the clear leader.",
         options: anchorRunoffCandidates.length ? anchorRunoffCandidates : ANCHOR_COUNTRIES.slice(0, 2),
         votes: anchorRunoffVotes,
         selectedName: myVotes["anchor-runoff"],
         voteLabel: "Break the Tie",
-        nextLabel: "Confirm Finalists",
+        nextLabel: "Lock Finalists",
         canAdvance: Object.keys(anchorRunoffVotes).length > 0,
         finalistNames: [],
       },
       {
-        id: "anchor-final",
+        id: "combo-vote",
         eyebrow: "Vote 02",
-        title: "Lock in City A",
-        shortTitle: "City A Final",
-        mode: "anchor-final",
+        title: "Vote for City A + City B",
+        shortTitle: "Combo Vote",
+        mode: "combo-vote",
         status: missionIndex < 2 ? "locked" : missionIndex === 2 ? "active" : "complete",
-        instruction: "Top two from Vote 01 head-to-head. The winner becomes City A and unlocks the City B list.",
-        options: anchorFinalists.length ? anchorFinalists : ANCHOR_COUNTRIES.slice(0, 2),
-        votes: allVoteCounts["anchor-final"] || {},
-        selectedName: myVotes["anchor-final"] || anchorWinner?.name,
-        voteLabel: "Lock City A",
-        nextLabel: "Generate City B List",
-        canAdvance: Object.keys(allVoteCounts["anchor-final"] || {}).length > 0 || Boolean(anchorWinner),
-        finalistNames: anchorFinalists.map((c) => c.name),
-      },
-      {
-        id: "companion-longlist",
-        eyebrow: "Vote 03",
-        title: "Vote for City B",
-        shortTitle: "City B",
-        mode: "companion-longlist",
-        status: missionIndex < 3 ? "locked" : missionIndex === 3 ? "active" : "complete",
-        instruction: anchorWinner
-          ? `Porter built the City B list around ${anchorWinner.name} — matched on flight logic, cost balance, cultural contrast, and trip pacing.`
-          : "City B list will be generated once City A is locked.",
-        options: companionOptions,
-        votes: companionVotes,
-        selectedName: myVotes["companion-longlist"],
-        voteLabel: "Cast Vote",
-        nextLabel: hasTieAtPosition(companionVotes, 0) || hasTieAtPosition(companionVotes, 1) ? "Tied — Start Runoff" : "Advance Top Two",
-        canAdvance: Object.keys(companionVotes).length > 0,
-        finalistNames: companionFinalists.map((c) => c.name),
-      },
-      {
-        id: "companion-runoff",
-        eyebrow: "Runoff B",
-        title: "City B Tiebreaker",
-        shortTitle: "Runoff B",
-        mode: "companion-runoff",
-        status: missionIndex < 4 ? "locked" : missionIndex === 4 ? "active" : "complete",
-        instruction: "Tied cities from Vote 03 — one more vote to break the tie. Winner joins the top city to form the final two.",
-        options: companionRunoffCandidates.length ? companionRunoffCandidates : companionOptions.slice(0, 2),
-        votes: companionRunoffVotes,
-        selectedName: myVotes["companion-runoff"],
-        voteLabel: "Break the Tie",
-        nextLabel: "Confirm Finalists",
-        canAdvance: Object.keys(companionRunoffVotes).length > 0,
+        instruction: "The two City A finalists each bring their City B options. Vote for the full combination you want. The winning combo locks both cities. If it's within two votes, a runoff decides.",
+        options: comboOptions,
+        votes: comboVotes,
+        selectedName: myVotes["combo-vote"],
+        voteLabel: "Vote for Combo",
+        nextLabel: needsComboRunoff(comboVotes) ? "Close — Start Runoff" : "Lock Destination",
+        canAdvance: Object.keys(comboVotes).length > 0,
         finalistNames: [],
       },
       {
-        id: "companion-final",
-        eyebrow: "Vote 04",
-        title: "Lock in City B",
-        shortTitle: "City B Final",
-        mode: "companion-final",
-        status: missionIndex < 5 ? "locked" : "active",
-        instruction: "Top two from Vote 03 head-to-head. The winner becomes City B — destination locked.",
-        options: companionFinalists.length ? companionFinalists : companionOptions.slice(0, 2),
-        votes: allVoteCounts["companion-final"] || {},
-        selectedName: myVotes["companion-final"] || companionWinner?.name,
-        voteLabel: "Lock City B",
+        id: "combo-runoff",
+        eyebrow: "Final Runoff",
+        title: "Destination Tiebreaker",
+        shortTitle: "Final Runoff",
+        mode: "combo-runoff",
+        status: missionIndex < 3 ? "locked" : "active",
+        instruction: "Two combinations too close to call. One final vote locks the destination.",
+        options: comboRunoffCandidates.length ? comboRunoffCandidates : comboOptions.slice(0, 2),
+        votes: comboRunoffVotes,
+        selectedName: myVotes["combo-runoff"],
+        voteLabel: "Lock Destination",
         nextLabel: "Lock Destination",
-        canAdvance: Object.keys(allVoteCounts["companion-final"] || {}).length > 0 || Boolean(companionWinner),
-        finalistNames: companionFinalists.map((c) => c.name),
+        canAdvance: Object.keys(comboRunoffVotes).length > 0,
+        finalistNames: [],
       },
     ],
     [
       missionIndex, anchorVotes, anchorRunoffVotes, anchorFinalists, anchorRunoffCandidates,
-      companionOptions, companionVotes, companionRunoffVotes, companionFinalists, companionRunoffCandidates,
-      anchorWinner, companionWinner, myVotes, allVoteCounts,
+      comboOptions, comboVotes, comboRunoffVotes, comboRunoffCandidates, myVotes,
     ]
   );
 
@@ -2436,11 +2509,9 @@ function VotesPage() {
   const handleAdvance = useCallback(async function handleAdvance() {
     if (!activeMission?.canAdvance) return;
 
-    // 0: anchor-longlist → check for tie → go to runoff (1) or skip to final (2)
+    // 0: anchor-longlist → runoff (1) if within 1, else combo-vote (2)
     if (missionIndex === 0) {
-      const tiedFor2nd = hasTieAtPosition(anchorVotes, 1);
-      const tiedFor1st = hasTieAtPosition(anchorVotes, 0);
-      if (tiedFor2nd || tiedFor1st) {
+      if (needsAnchorRunoff(anchorVotes)) {
         startRunoff(anchorVotes, "anchor-runoff", 1);
       } else {
         setMissionIndex(2);
@@ -2449,89 +2520,49 @@ function VotesPage() {
       return;
     }
 
-    // 1: anchor-runoff → go to anchor-final (2)
+    // 1: anchor-runoff → combo-vote (2)
     if (missionIndex === 1) {
       setMissionIndex(2);
       pushStateToSupabase({ mission_index: 2 });
       return;
     }
 
-    // 2: anchor-final → lock winner, clear companion votes, go to companion-longlist (3)
+    // 2: combo-vote → runoff (3) if within 2, else lock winner
     if (missionIndex === 2) {
-      const finalVotes = allVoteCounts["anchor-final"] || {};
-      const topName = Object.entries(finalVotes).sort((a, b) => b[1] - a[1])[0]?.[0] || anchorWinner?.name;
-      const winner = topName ? getCountryByName(topName) : anchorFinalists[0];
-      if (winner) {
-        setAnchorWinner(winner);
-        setAllVoteCounts((prev) => {
-          const next = { ...prev };
-          delete next["companion-longlist"];
-          delete next["companion-runoff"];
-          delete next["companion-final"];
-          return next;
-        });
-        setMyVotes((prev) => {
-          const next = { ...prev };
-          delete next["companion-longlist"];
-          delete next["companion-runoff"];
-          delete next["companion-final"];
-          return next;
-        });
-        setMissionIndex(3);
-        pushStateToSupabase({ mission_index: 3, anchor_winner: winner.name });
-        if (supabase) {
-          supabase
-            .from("cohort_votes")
-            .delete()
-            .eq("cohort_id", COHORT_ID)
-            .in("vote_phase", ["companion-longlist", "companion-runoff", "companion-final"])
-            .then(() => {});
+      if (needsComboRunoff(comboVotes)) {
+        startRunoff(comboVotes, "combo-runoff", 3);
+      } else {
+        const topName = Object.entries(comboVotes).sort((a, b) => b[1] - a[1])[0]?.[0];
+        const winner = comboOptions.find(c => c.name === topName);
+        if (winner) {
+          setAnchorWinner(winner.cityA);
+          setCompanionWinner(winner.cityB);
+          setShowCelebration(true);
+          pushStateToSupabase({ anchor_winner: winner.cityA.name, companion_winner: winner.cityB.name });
         }
       }
       return;
     }
 
-    // 3: companion-longlist → check for tie → go to runoff (4) or skip to final (5)
+    // 3: combo-runoff → lock destination
     if (missionIndex === 3) {
-      const tiedFor2nd = hasTieAtPosition(companionVotes, 1);
-      const tiedFor1st = hasTieAtPosition(companionVotes, 0);
-      if (tiedFor2nd || tiedFor1st) {
-        startRunoff(companionVotes, "companion-runoff", 4);
-      } else {
-        setMissionIndex(5);
-        pushStateToSupabase({ mission_index: 5 });
-      }
-      return;
-    }
-
-    // 4: companion-runoff → go to companion-final (5)
-    if (missionIndex === 4) {
-      setMissionIndex(5);
-      pushStateToSupabase({ mission_index: 5 });
-      return;
-    }
-
-    // 5: companion-final → lock destination
-    if (missionIndex === 5) {
-      const finalVotes = allVoteCounts["companion-final"] || {};
-      const topName = Object.entries(finalVotes).sort((a, b) => b[1] - a[1])[0]?.[0] || companionWinner?.name;
-      const winner = topName ? getCountryByName(topName) : companionFinalists[0];
+      const topName = Object.entries(comboRunoffVotes).sort((a, b) => b[1] - a[1])[0]?.[0];
+      const winner = comboOptions.find(c => c.name === topName) || comboRunoffCandidates.find(c => c.name === topName);
       if (winner) {
-        setCompanionWinner(winner);
+        setAnchorWinner(winner.cityA);
+        setCompanionWinner(winner.cityB);
         setShowCelebration(true);
-        pushStateToSupabase({ companion_winner: winner.name });
+        pushStateToSupabase({ anchor_winner: winner.cityA.name, companion_winner: winner.cityB.name });
       }
     }
-  }, [missionIndex, activeMission, anchorVotes, anchorFinalists, companionVotes, companionFinalists, anchorWinner, companionWinner, allVoteCounts]);
+  }, [missionIndex, activeMission, anchorVotes, comboVotes, comboRunoffVotes, comboOptions, comboRunoffCandidates]);
 
-  // Auto-advance when all COHORT_SIZE votes are in for the active phase.
-  // A ref guards against firing twice if the count briefly hits 16 during a re-render.
+  // Auto-advance when all COHORT_SIZE votes are in. Runoff phases advance manually.
   const autoAdvancedForPhase = useRef(null);
   useEffect(() => {
     const phase = activeMission?.mode;
     if (!phase || !activeMission?.canAdvance) return;
-    // Don't auto-advance the final missions — those lock the destination; keep that explicit.
-    if (phase === "anchor-final" || phase === "companion-final") return;
+    if (phase === "anchor-runoff" || phase === "combo-runoff") return;
     const voteCount = Object.values(activeMission.votes || {}).reduce((s, n) => s + n, 0);
     if (voteCount >= COHORT_SIZE && autoAdvancedForPhase.current !== phase) {
       autoAdvancedForPhase.current = phase;
@@ -2841,8 +2872,8 @@ function DestinationChamber({
 
   const arcs = useMemo(() => {
     const mode = activeMission.mode;
-    const isAnchor = mode === "anchor-longlist" || mode === "anchor-runoff" || mode === "anchor-final";
-    const isCompanion = mode === "companion-longlist" || mode === "companion-runoff" || mode === "companion-final";
+    const isAnchor = mode === "anchor-longlist" || mode === "anchor-runoff";
+    const isCombo = mode === "combo-vote" || mode === "combo-runoff";
     if (isAnchor) {
       const source = activeCountry;
       if (!source) return [];
@@ -2852,10 +2883,9 @@ function DestinationChamber({
         .filter(Boolean)
         .map((bCity) => ({ startLat: source.lat, startLng: source.lng, endLat: bCity.lat, endLng: bCity.lng, label: bCity.name }));
     }
-    if (anchorWinner && isCompanion) {
-      return activeMission.options.map((bCity) => ({
-        startLat: anchorWinner.lat, startLng: anchorWinner.lng, endLat: bCity.lat, endLng: bCity.lng, label: bCity.name,
-      }));
+    if (isCombo && activeCountry?.cityB) {
+      const combo = activeCountry;
+      return [{ startLat: combo.cityA.lat, startLng: combo.cityA.lng, endLat: combo.cityB.lat, endLng: combo.cityB.lng, label: combo.cityB.name }];
     }
     return [];
   }, [activeCountry, activeMission, anchorWinner]);
@@ -3495,7 +3525,7 @@ function MissionHud({
   companionWinner,
   onMissionJump,
 }) {
-  const isFinal = activeMission.mode === "anchor-final" || activeMission.mode === "companion-final";
+  const isFinal = activeMission.mode === "combo-vote" || activeMission.mode === "combo-runoff";
   const allVoted = activeVoteCount >= COHORT_SIZE;
 
   return (
@@ -3828,7 +3858,7 @@ function FloatingIntelPanel({
           );
         })()}
 
-        {(mission.mode === "anchor-longlist" || mission.mode === "anchor-runoff" || mission.mode === "anchor-final") && CITY_B_MAP[country.name]?.length > 0 && (
+        {(mission.mode === "anchor-longlist" || mission.mode === "anchor-runoff") && CITY_B_MAP[country.name]?.length > 0 && (
           <div className="mt-4 rounded-3xl border border-white/10 bg-black/30 p-4">
             <p className="text-xs uppercase tracking-[0.18em] font-black" style={{ color: COLORS.champagne }}>
               City B options
@@ -3879,7 +3909,7 @@ function FloatingIntelPanel({
 
           <button
             onClick={onAdvance}
-            disabled={!mission.canAdvance || mission.mode === "companion-final"}
+            disabled={!mission.canAdvance}
             className="rounded-2xl px-4 py-3 text-left font-black uppercase tracking-[0.08em] disabled:opacity-35"
             style={{
               background: "rgba(196,150,42,0.08)",
@@ -3887,7 +3917,7 @@ function FloatingIntelPanel({
               color: "#FFD880",
             }}
           >
-            {mission.mode === "companion-final" ? "Lock destination" : `${mission.nextLabel} →`}
+            {`${mission.nextLabel} →`}
           </button>
         </div>
 
@@ -4028,7 +4058,7 @@ function DeepDivePanel({ country, mission, selected, onClose, onVote }) {
             </div>
           )}
 
-          {(mission.mode === "anchor-longlist" || mission.mode === "anchor-runoff" || mission.mode === "anchor-final") && CITY_B_MAP[country.name]?.length > 0 && (
+          {(mission.mode === "anchor-longlist" || mission.mode === "anchor-runoff") && CITY_B_MAP[country.name]?.length > 0 && (
             <div>
               <div className="text-[10px] uppercase tracking-[0.26em] font-black mb-3" style={{ color: "#FFD880" }}>
                 City B add-on options
