@@ -2916,7 +2916,7 @@ function DestinationChamber({
   }
 
   return (
-    <section className="absolute inset-0 overflow-hidden text-white bg-[#080700]">
+    <section className="relative w-screen overflow-hidden text-white bg-[#080700]" style={{ height: `${globeSize.height}px` }}>
       <ChamberCss />
       <RoomBackground active={Boolean(activeCountry)} />
 
