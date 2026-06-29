@@ -2556,8 +2556,8 @@ function VotesPage() {
   const activeMission = missions[Math.min(missionIndex, missions.length - 1)];
   const activeVoteCount = Object.values(activeMission?.votes || {}).reduce((s, n) => s + n, 0);
 
-  return createPortal(
-    <main className="fixed inset-0 overflow-hidden" style={{ zIndex: 9999 }}>
+  return (
+    <main style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, overflow: "hidden" }}>
       <DestinationChamber
         missions={missions}
         missionIndex={missionIndex}
@@ -2573,8 +2573,7 @@ function VotesPage() {
         onReset={resetProtocol}
         onDismissCelebration={() => setShowCelebration(false)}
       />
-    </main>,
-    document.body
+    </main>
   );
 }
 
@@ -2934,7 +2933,7 @@ function DestinationChamber({
   }
 
   return (
-    <section className="relative w-screen overflow-hidden text-white bg-[#080700]" style={{ height: `${globeSize.height}px`, minHeight: "100vh" }}>
+    <section style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", color: "white", background: "#080700" }}>
       <ChamberCss />
       <RoomBackground active={Boolean(activeCountry)} />
 
@@ -4980,6 +4979,15 @@ export default function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+
+  if (location.pathname === "/votes") {
+    return (
+      <VotesErrorBoundary>
+        <VotesPage />
+      </VotesErrorBoundary>
+    );
+  }
 
   return (
     <>
@@ -4989,7 +4997,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<HomePage onAsk={() => navigate("/porter")} />} />
           <Route path="/porter" element={<PorterPage />} />
-          <Route path="/votes" element={<VotesErrorBoundary><VotesPage /></VotesErrorBoundary>} />
+          <Route path="/votes" element={null} />
           <Route path="/events" element={<EventsPage />} />
           <Route path="/tools" element={<ToolsPage />} />
 
