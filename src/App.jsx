@@ -1145,6 +1145,7 @@ function HomePage({ onAsk }) {
   const { anchorWinner, companionWinner } = useLockedDestinations();
   const routeLocked = Boolean(anchorWinner && companionWinner);
   const [timeLeft, setTimeLeft] = useState(timeUntilDeparture);
+  const [showCalendar, setShowCalendar] = useState(false);
 
   useEffect(() => {
     const midnight = new Date();
@@ -1257,11 +1258,12 @@ function HomePage({ onAsk }) {
         </section>
 
         <section className="mt-5 grid grid-cols-2 gap-3">
-          <FeatureTile icon="🗳️" label="Destination Vote" value={voteLabel} />
+          <FeatureTile icon="🗳️" label="Destination Vote" value={voteLabel} onClick={() => navigate("/votes")} />
           <FeatureTile
             icon="📅"
             label="Next Key Date"
             value={daysToNext !== null ? (daysToNext === 0 ? "Today" : `${daysToNext}d`) : "—"}
+            onClick={() => setShowCalendar(true)}
           />
         </section>
 
@@ -1272,17 +1274,181 @@ function HomePage({ onAsk }) {
           ))}
         </section>
       </div>
+
+      <KeyDatesCalendar open={showCalendar} onClose={() => setShowCalendar(false)} events={COHORT_EVENTS} />
     </main>
   );
 }
 
-function FeatureTile({ icon, label, value }) {
-  return (
-    <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-4">
-      <div className="text-2xl">{icon}</div>
+function FeatureTile({ icon, label, value, onClick }) {
+  const inner = (
+    <>
+      <div className="flex items-start justify-between">
+        <div className="text-2xl">{icon}</div>
+        {onClick && <span aria-hidden className="text-lg leading-none text-white/30">›</span>}
+      </div>
       <div className="mt-3 text-xs uppercase tracking-[0.18em] text-white/38 font-bold">{label}</div>
       <div className="mt-1 font-black" style={{ color: COLORS.champagneLight }}>
         {value}
+      </div>
+    </>
+  );
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className="text-left rounded-3xl border border-white/10 bg-white/[0.06] p-4 transition hover:bg-white/[0.10] hover:border-white/20 active:scale-[0.98]"
+      >
+        {inner}
+      </button>
+    );
+  }
+
+  return (
+    <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-4">
+      {inner}
+    </div>
+  );
+}
+
+const CAL_WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
+const CAL_MONTHS = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+
+// Visual month-grid calendar shared by the home "Key Dates" modal and the Plan page.
+function EventMonthGrid({ events }) {
+  // Group events by their UTC calendar day (fullDate is constructed as UTC midnight).
+  const byDay = {};
+  events.forEach((ev) => {
+    const d = ev.fullDate;
+    const key = `${d.getUTCFullYear()}-${d.getUTCMonth()}-${d.getUTCDate()}`;
+    (byDay[key] = byDay[key] || []).push(ev);
+  });
+
+  // Render every month from the first key date to the last.
+  const times = events.map((e) => e.fullDate.getTime());
+  const min = new Date(Math.min(...times));
+  const max = new Date(Math.max(...times));
+  const months = [];
+  let y = min.getUTCFullYear(), m = min.getUTCMonth();
+  const endY = max.getUTCFullYear(), endM = max.getUTCMonth();
+  while (y < endY || (y === endY && m <= endM)) {
+    months.push({ year: y, month: m });
+    m += 1;
+    if (m > 11) { m = 0; y += 1; }
+  }
+
+  const now = new Date();
+  const todayKey = `${now.getFullYear()}-${now.getMonth()}-${now.getDate()}`;
+
+  return (
+    <>
+      {months.map(({ year, month }) => {
+        const startWeekday = new Date(Date.UTC(year, month, 1)).getUTCDay();
+        const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+        const cells = [];
+        for (let i = 0; i < startWeekday; i += 1) cells.push(null);
+        for (let d = 1; d <= daysInMonth; d += 1) cells.push(d);
+
+        return (
+          <div key={`${year}-${month}`} className="mt-5">
+            <div className="text-sm font-black text-white/80">{CAL_MONTHS[month]} {year}</div>
+            <div className="mt-2 grid grid-cols-7 gap-1 text-center">
+              {CAL_WEEKDAYS.map((w, i) => (
+                <div key={i} className="py-1 text-[10px] font-bold text-white/30">{w}</div>
+              ))}
+              {cells.map((d, i) => {
+                if (d === null) return <div key={i} />;
+                const key = `${year}-${month}-${d}`;
+                const dayEvents = byDay[key];
+                const isToday = key === todayKey;
+                return (
+                  <div
+                    key={i}
+                    title={dayEvents ? dayEvents.map((e) => e.title).join(" · ") : undefined}
+                    className="relative flex aspect-square flex-col items-center justify-center rounded-xl text-xs"
+                    style={dayEvents
+                      ? { background: "rgba(243,213,138,0.16)", border: `1px solid ${COLORS.champagne}`, color: COLORS.champagneLight, fontWeight: 800 }
+                      : { color: "rgba(255,255,255,0.45)" }}
+                  >
+                    <span className={isToday ? "underline underline-offset-2" : ""}>{d}</span>
+                    {dayEvents && (
+                      <span className="mt-0.5 flex gap-0.5">
+                        {dayEvents.slice(0, 3).map((_, j) => (
+                          <span key={j} className="h-1 w-1 rounded-full" style={{ background: COLORS.ember }} />
+                        ))}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function KeyDatesCalendar({ open, onClose, events }) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  const sorted = events.slice().sort((a, b) => a.fullDate - b.fullDate);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-end justify-center sm:items-center">
+      <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={onClose} />
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="relative z-10 max-h-[88vh] w-full overflow-y-auto rounded-t-[2rem] border border-white/10 p-5 sm:max-w-md sm:rounded-[2rem]"
+        style={{ background: "rgba(12,10,16,0.98)" }}
+      >
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="text-[9px] uppercase tracking-[0.32em] font-black" style={{ color: COLORS.champagne }}>
+              Global 85 · Schedule
+            </p>
+            <h2 className="mt-1 text-2xl font-black" style={{ fontFamily: "Georgia, serif" }}>Key Dates</h2>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/5 text-white/60 hover:text-white"
+          >
+            ✕
+          </button>
+        </div>
+
+        <EventMonthGrid events={events} />
+
+        <div className="mt-6 grid gap-2">
+          {sorted.map((ev) => (
+            <div key={ev.id} className="flex items-start gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+              <div
+                className="min-w-[52px] rounded-xl px-2.5 py-1.5 text-center text-xs font-black leading-tight"
+                style={{ background: "rgba(243,213,138,0.12)", color: COLORS.champagneLight }}
+              >
+                {ev.date}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="text-[10px] uppercase tracking-[0.16em] text-white/35 font-bold">{ev.source}</div>
+                <div className="text-sm font-bold leading-snug text-white">{ev.title}</div>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -4727,8 +4893,13 @@ function EventsPage() {
         </p>
       </section>
 
+      <section className="mt-6 rounded-[2rem] p-5 border border-white/10 bg-white/[0.04]">
+        <SectionTitle eyebrow="At a glance" title="Calendar" />
+        <EventMonthGrid events={COHORT_EVENTS} />
+      </section>
+
       <section className="mt-6">
-        <SectionTitle eyebrow="Upcoming" title="Key dates" />
+        <SectionTitle eyebrow="Details" title="Key dates" />
         <div className="grid gap-3 mt-3">
           {COHORT_EVENTS.map((event) => (
             <EventCard key={event.id} event={event} today={today} />
