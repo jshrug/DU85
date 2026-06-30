@@ -1,33 +1,50 @@
-import { doc, onSnapshot } from "firebase/firestore";
-import { onAuthStateChanged } from "firebase/auth";
-import { auth, db, COHORT_ID } from "./firebase";
+import { supabase } from "./supabase";
 
 export function subscribeIsAdmin(cb) {
-  let unsubAdminDoc = null;
+  let uid = null;
+  let adminChannel = null;
 
-  const unsubAuth = onAuthStateChanged(auth, (u) => {
-    // Clean up previous admin doc subscription (if any)
-    if (unsubAdminDoc) {
-      unsubAdminDoc();
-      unsubAdminDoc = null;
-    }
+  async function checkAdmin() {
+    if (!uid) { cb(false); return; }
+    const { data } = await supabase
+      .from("admins")
+      .select("enabled")
+      .eq("id", uid)
+      .single();
+    cb(!!data?.enabled);
+  }
 
-    // Not signed in (or auth not ready yet)
-    if (!u) {
-      cb(false);
-      return;
-    }
+  function subscribeAdminDoc(newUid) {
+    if (adminChannel) { supabase.removeChannel(adminChannel); adminChannel = null; }
+    if (!newUid) return;
+    adminChannel = supabase
+      .channel(`admin-doc-${newUid}`)
+      .on("postgres_changes", {
+        event: "*",
+        schema: "public",
+        table: "admins",
+        filter: `id=eq.${newUid}`,
+      }, checkAdmin)
+      .subscribe();
+  }
 
-    // Subscribe to admins allowlist doc
-    const ref = doc(db, "cohorts", COHORT_ID, "admins", u.uid);
-    unsubAdminDoc = onSnapshot(ref, (snap) => {
-      cb(!!snap.exists() && snap.data()?.enabled === true);
-    });
+  supabase.auth.getSession().then(({ data: { session } }) => {
+    uid = session?.user?.id ?? null;
+    subscribeAdminDoc(uid);
+    checkAdmin();
   });
 
-  // Return a single unsubscribe that cleans up both listeners
+  const { data: { subscription: authSub } } = supabase.auth.onAuthStateChange((_, session) => {
+    const newUid = session?.user?.id ?? null;
+    if (newUid !== uid) {
+      uid = newUid;
+      subscribeAdminDoc(uid);
+      checkAdmin();
+    }
+  });
+
   return () => {
-    if (unsubAdminDoc) unsubAdminDoc();
-    unsubAuth();
+    authSub.unsubscribe();
+    if (adminChannel) supabase.removeChannel(adminChannel);
   };
 }

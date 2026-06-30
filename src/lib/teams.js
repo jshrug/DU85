@@ -1,218 +1,246 @@
-import {
-  collection,
-  doc,
-  onSnapshot,
-  query,
-  orderBy,
-  limit,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  getDocs,
-  serverTimestamp,
-  writeBatch,
-} from "firebase/firestore";
-import { db, COHORT_ID } from "./firebase.js";
+import { supabase, COHORT_ID } from "./supabase";
 
-// ── Ref helpers ────────────────────────────────────────────────────────────────
-
-function teamsRef() {
-  return collection(db, "cohorts", COHORT_ID, "teams");
-}
-function teamRef(teamId) {
-  return doc(db, "cohorts", COHORT_ID, "teams", teamId);
-}
-function membersRef(teamId) {
-  return collection(db, "cohorts", COHORT_ID, "teams", teamId, "members");
-}
-function memberRef(teamId, uid) {
-  return doc(db, "cohorts", COHORT_ID, "teams", teamId, "members", uid);
-}
-function messagesRef(teamId) {
-  return collection(db, "cohorts", COHORT_ID, "teams", teamId, "messages");
-}
-function messageRef(teamId, messageId) {
-  return doc(db, "cohorts", COHORT_ID, "teams", teamId, "messages", messageId);
-}
-function meetingsRef(teamId) {
-  return collection(db, "cohorts", COHORT_ID, "teams", teamId, "meetings");
-}
-function meetingRef(teamId, meetingId) {
-  return doc(db, "cohorts", COHORT_ID, "teams", teamId, "meetings", meetingId);
-}
-function cohortMemberRef(uid) {
-  return doc(db, "cohorts", COHORT_ID, "members", uid);
+function mapTeam(row) {
+  return { id: row.id, name: row.name, createdAt: row.created_at, createdByUid: row.created_by_uid };
 }
 
-// ── Team subscriptions ─────────────────────────────────────────────────────────
-
-/** Admin: subscribe to all teams */
-export function subscribeTeams(callback) {
-  const q = query(teamsRef(), orderBy("createdAt", "asc"));
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-  });
+function mapTeamMember(row) {
+  return { uid: row.uid, displayName: row.display_name, joinedAt: row.joined_at };
 }
 
-/**
- * Member: subscribe to this user's team.
- *
- * Instead of scanning all teams (unreliable, requires subcollection reads),
- * we store teamId on the member's own profile doc — which they already have
- * read access to. We watch that doc for teamId changes, then subscribe to
- * the actual team doc. Returns a single unsubscribe function.
- */
-export function subscribeMyTeam(uid, callback) {
-  let teamUnsub = null;
-
-  const memberUnsub = onSnapshot(cohortMemberRef(uid), (memberSnap) => {
-    const teamId = memberSnap.exists() ? memberSnap.data().teamId : null;
-
-    // Clean up previous team listener if it exists
-    if (teamUnsub) {
-      teamUnsub();
-      teamUnsub = null;
-    }
-
-    if (!teamId) {
-      callback(null);
-      return;
-    }
-
-    // Subscribe to the team doc directly
-    teamUnsub = onSnapshot(teamRef(teamId), (teamSnap) => {
-      if (!teamSnap.exists()) {
-        callback(null);
-      } else {
-        callback({ id: teamSnap.id, ...teamSnap.data() });
-      }
-    });
-  });
-
-  return () => {
-    memberUnsub();
-    if (teamUnsub) teamUnsub();
+function mapMessage(row) {
+  return {
+    id: row.id,
+    text: row.text,
+    createdAt: row.created_at,
+    createdByUid: row.created_by_uid,
+    createdByName: row.created_by_name,
   };
 }
 
-/** Subscribe to members of a specific team */
-export function subscribeTeamMembers(teamId, callback) {
-  const q = query(membersRef(teamId), orderBy("joinedAt", "asc"));
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ uid: d.id, ...d.data() })));
-  });
+function mapMeeting(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    dateTime: row.date_time,
+    location: row.location,
+    notes: row.notes,
+    createdAt: row.created_at,
+    createdByUid: row.created_by_uid,
+  };
 }
 
-// ── Team CRUD (admin only) ─────────────────────────────────────────────────────
+export function subscribeTeams(callback) {
+  let active = true;
+
+  async function fetch() {
+    const { data } = await supabase
+      .from("teams")
+      .select("*")
+      .eq("cohort_id", COHORT_ID)
+      .order("created_at", { ascending: true });
+    if (active) callback((data || []).map(mapTeam));
+  }
+
+  fetch();
+
+  const channel = supabase
+    .channel(`teams-${COHORT_ID}`)
+    .on("postgres_changes", { event: "*", schema: "public", table: "teams" }, fetch)
+    .subscribe();
+
+  return () => { active = false; supabase.removeChannel(channel); };
+}
+
+export function subscribeMyTeam(uid, callback) {
+  let active = true;
+  let teamChannel = null;
+
+  async function fetchTeam(teamId) {
+    if (!teamId) { if (active) callback(null); return; }
+    const { data } = await supabase.from("teams").select("*").eq("id", teamId).single();
+    if (active) callback(data ? mapTeam(data) : null);
+  }
+
+  const memberChannel = supabase
+    .channel(`my-team-member-${uid}`)
+    .on("postgres_changes", {
+      event: "*",
+      schema: "public",
+      table: "members",
+      filter: `id=eq.${uid}`,
+    }, async (payload) => {
+      const teamId = payload.new?.team_id ?? null;
+      if (teamChannel) { supabase.removeChannel(teamChannel); teamChannel = null; }
+      if (teamId) {
+        teamChannel = supabase
+          .channel(`my-team-doc-${teamId}`)
+          .on("postgres_changes", { event: "*", schema: "public", table: "teams", filter: `id=eq.${teamId}` },
+            () => fetchTeam(teamId))
+          .subscribe();
+      }
+      fetchTeam(teamId);
+    })
+    .subscribe();
+
+  supabase.from("members").select("team_id").eq("id", uid).single().then(({ data }) => {
+    fetchTeam(data?.team_id ?? null);
+  });
+
+  return () => {
+    active = false;
+    supabase.removeChannel(memberChannel);
+    if (teamChannel) supabase.removeChannel(teamChannel);
+  };
+}
+
+export function subscribeTeamMembers(teamId, callback) {
+  let active = true;
+
+  async function fetch() {
+    const { data } = await supabase
+      .from("team_members")
+      .select("*")
+      .eq("team_id", teamId)
+      .order("joined_at", { ascending: true });
+    if (active) callback((data || []).map(mapTeamMember));
+  }
+
+  fetch();
+
+  const channel = supabase
+    .channel(`team-members-${teamId}`)
+    .on("postgres_changes", { event: "*", schema: "public", table: "team_members", filter: `team_id=eq.${teamId}` }, fetch)
+    .subscribe();
+
+  return () => { active = false; supabase.removeChannel(channel); };
+}
 
 export async function createTeam(name, createdByUid) {
-  const ref = await addDoc(teamsRef(), {
-    name,
-    createdAt: serverTimestamp(),
-    createdByUid,
-  });
-  return ref.id;
+  const { data, error } = await supabase
+    .from("teams")
+    .insert({ cohort_id: COHORT_ID, name, created_by_uid: createdByUid })
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+  return data.id;
 }
 
 export async function updateTeam(teamId, name) {
-  await updateDoc(teamRef(teamId), { name });
+  const { error } = await supabase.from("teams").update({ name }).eq("id", teamId);
+  if (error) throw new Error(error.message);
 }
 
-/**
- * Delete a team and all its subcollections.
- * Also clears teamId from every assigned member's profile doc.
- */
 export async function deleteTeam(teamId) {
-  const batch = writeBatch(db);
-
-  // Clear teamId from cohort member profile docs first
-  const memberSnap = await getDocs(membersRef(teamId));
-  for (const m of memberSnap.docs) {
-    batch.update(cohortMemberRef(m.id), { teamId: null });
+  const { data: members } = await supabase.from("team_members").select("uid").eq("team_id", teamId);
+  if (members?.length) {
+    const uids = members.map((m) => m.uid);
+    await supabase.from("members").update({ team_id: null }).in("id", uids);
   }
-
-  // Delete all subcollection docs
-  for (const subCol of [messagesRef(teamId), meetingsRef(teamId), membersRef(teamId)]) {
-    const snap = await getDocs(subCol);
-    snap.docs.forEach((d) => batch.delete(d.ref));
-  }
-
-  batch.delete(teamRef(teamId));
-  await batch.commit();
+  await supabase.from("teams").delete().eq("id", teamId);
 }
 
-// ── Member assignment (admin only) ────────────────────────────────────────────
-
-/**
- * Assign a member to a team.
- * Two writes in one batch:
- *   1. teams/{teamId}/members/{uid}  — for Firestore rules access check
- *   2. cohorts/{cohortId}/members/{uid}.teamId — so subscribeMyTeam works instantly
- */
 export async function assignMember(teamId, uid, displayName) {
-  const batch = writeBatch(db);
-  batch.set(memberRef(teamId, uid), { displayName, joinedAt: serverTimestamp() });
-  batch.update(cohortMemberRef(uid), { teamId });
-  await batch.commit();
+  await supabase.from("team_members").upsert(
+    { team_id: teamId, uid, display_name: displayName },
+    { onConflict: "team_id,uid" }
+  );
+  await supabase.from("members").update({ team_id: teamId }).eq("id", uid);
 }
 
-/**
- * Remove a member from a team.
- * Clears teamId on their profile and removes them from the team's members subcollection.
- */
 export async function removeMember(teamId, uid) {
-  const batch = writeBatch(db);
-  batch.delete(memberRef(teamId, uid));
-  batch.update(cohortMemberRef(uid), { teamId: null });
-  await batch.commit();
+  await supabase.from("team_members").delete().match({ team_id: teamId, uid });
+  await supabase.from("members").update({ team_id: null }).eq("id", uid);
 }
-
-// ── Team chat ──────────────────────────────────────────────────────────────────
 
 export function subscribeTeamMessages(teamId, callback) {
-  const q = query(messagesRef(teamId), orderBy("createdAt", "asc"), limit(100));
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-  });
+  let active = true;
+
+  async function fetch() {
+    const { data } = await supabase
+      .from("team_messages")
+      .select("*")
+      .eq("team_id", teamId)
+      .order("created_at", { ascending: true })
+      .limit(100);
+    if (active) callback((data || []).map(mapMessage));
+  }
+
+  fetch();
+
+  const channel = supabase
+    .channel(`team-chat-${teamId}`)
+    .on("postgres_changes", { event: "*", schema: "public", table: "team_messages", filter: `team_id=eq.${teamId}` }, fetch)
+    .subscribe();
+
+  return () => { active = false; supabase.removeChannel(channel); };
 }
 
 export async function sendTeamMessage(teamId, text, uid, displayName) {
-  await addDoc(messagesRef(teamId), {
+  let name = displayName;
+  if (!name) {
+    const { data: member } = await supabase.from("members").select("display_name").eq("id", uid).single();
+    name = member?.display_name || "Member";
+  }
+  const { error } = await supabase.from("team_messages").insert({
+    team_id: teamId,
     text,
-    createdAt: serverTimestamp(),
-    createdByUid: uid,
-    createdByName: displayName,
+    created_by_uid: uid,
+    created_by_name: name,
   });
+  if (error) throw new Error(error.message);
 }
 
 export async function deleteTeamMessage(teamId, messageId) {
-  await deleteDoc(messageRef(teamId, messageId));
+  const { error } = await supabase.from("team_messages").delete().eq("id", messageId);
+  if (error) throw new Error(error.message);
 }
 
-// ── Meetings ──────────────────────────────────────────────────────────────────
-
 export function subscribeTeamMeetings(teamId, callback) {
-  const q = query(meetingsRef(teamId), orderBy("dateTime", "asc"));
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-  });
+  let active = true;
+
+  async function fetch() {
+    const { data } = await supabase
+      .from("team_meetings")
+      .select("*")
+      .eq("team_id", teamId)
+      .order("date_time", { ascending: true });
+    if (active) callback((data || []).map(mapMeeting));
+  }
+
+  fetch();
+
+  const channel = supabase
+    .channel(`team-meetings-${teamId}`)
+    .on("postgres_changes", { event: "*", schema: "public", table: "team_meetings", filter: `team_id=eq.${teamId}` }, fetch)
+    .subscribe();
+
+  return () => { active = false; supabase.removeChannel(channel); };
 }
 
 export async function createMeeting(teamId, { title, dateTime, location, notes }, createdByUid) {
-  await addDoc(meetingsRef(teamId), {
+  const { error } = await supabase.from("team_meetings").insert({
+    team_id: teamId,
     title,
-    dateTime,
+    date_time: dateTime instanceof Date ? dateTime.toISOString() : dateTime,
     location: location || "",
     notes: notes || "",
-    createdAt: serverTimestamp(),
-    createdByUid,
+    created_by_uid: createdByUid,
   });
+  if (error) throw new Error(error.message);
 }
 
 export async function updateMeeting(teamId, meetingId, fields) {
-  await updateDoc(meetingRef(teamId, meetingId), fields);
+  const patch = {};
+  if (fields.title !== undefined) patch.title = fields.title;
+  if (fields.dateTime !== undefined) patch.date_time = fields.dateTime instanceof Date ? fields.dateTime.toISOString() : fields.dateTime;
+  if (fields.location !== undefined) patch.location = fields.location;
+  if (fields.notes !== undefined) patch.notes = fields.notes;
+  const { error } = await supabase.from("team_meetings").update(patch).eq("id", meetingId);
+  if (error) throw new Error(error.message);
 }
 
 export async function deleteMeeting(teamId, meetingId) {
-  await deleteDoc(meetingRef(teamId, meetingId));
+  const { error } = await supabase.from("team_meetings").delete().eq("id", meetingId);
+  if (error) throw new Error(error.message);
 }

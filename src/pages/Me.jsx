@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "../lib/firebase";
+import { useMemo, useRef, useState } from "react";
+import { useAuth } from "../lib/AuthContext";
 import { signOutUser } from "../lib/auth";
 import { subscribeMember, updateMyProfile } from "../lib/members";
 import {
@@ -17,7 +16,7 @@ import {
 const CITIES = ["Singapore", "Ho Chi Minh City"];
 
 export default function Me() {
-  const [user, setUser] = useState(null);
+  const { user } = useAuth();
 
   const [member, setMember] = useState(null);
   const [displayName, setDisplayName] = useState("");
@@ -33,31 +32,24 @@ export default function Me() {
   const [uploadError, setUploadError] = useState("");
   const fileInputRef = useRef(null);
 
-  // React to auth state (fixes refresh timing issue)
-  useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => setUser(u || null));
-    return () => unsub();
-  }, []);
-
   // Subscribe to member doc once user is available
   useEffect(() => {
-    if (!user?.uid) return;
+    if (!user?.id) return;
 
-    const unsub = subscribeMember(user.uid, (m) => {
+    const unsub = subscribeMember(user.id, (m) => {
       setMember(m);
-      setDisplayName(m?.displayName || user.displayName || "Member");
+      setDisplayName(m?.displayName || "Member");
       setDefaultCity(m?.defaultCity || "Singapore");
     });
 
     return () => unsub();
-  }, [user?.displayName, user?.uid]);
-
+  }, [user?.id]);
 
   // Subscribe to this user's files
   useEffect(() => {
-    if (!user?.uid) return;
-    return subscribeFiles(user.uid, setFiles);
-  }, [user?.uid]);
+    if (!user?.id) return;
+    return subscribeFiles(user.id, setFiles);
+  }, [user?.id]);
 
   const canSave = useMemo(() => {
     const dn = displayName.trim();
@@ -71,7 +63,7 @@ export default function Me() {
 
     setSaving(true);
     try {
-      await updateMyProfile(user.uid, { displayName, defaultCity });
+      await updateMyProfile(user.id, { displayName, defaultCity });
       setMsg("Saved.");
     } catch (e) {
       setErr(e?.message || "Could not save profile.");
@@ -99,7 +91,7 @@ export default function Me() {
     setUploading(true);
     setUploadProgress(0);
     try {
-      await uploadFile(user.uid, file, (pct) => setUploadProgress(pct));
+      await uploadFile(user.id, file, (pct) => setUploadProgress(pct));
     } catch (err) {
       console.error("Upload failed:", err);
       setUploadError("Upload failed. Please try again.");
@@ -112,7 +104,7 @@ export default function Me() {
   async function handleDeleteFile(fileId, storagePath, fileName) {
     if (!window.confirm("Delete \"" + fileName + "\"? This cannot be undone.")) return;
     try {
-      await deleteFile(user.uid, fileId, storagePath);
+      await deleteFile(user.id, fileId, storagePath);
     } catch (err) {
       console.error("Delete failed:", err);
       setUploadError("Could not delete file. Please try again.");

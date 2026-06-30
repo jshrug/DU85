@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { auth } from "../../lib/firebase";
+import { useAuth } from "../../lib/AuthContext";
 import { fmtDateTime } from "../../lib/format";
 import { setRsvp, subscribeRsvps } from "../../lib/events";
 import { subscribeEventChat, sendEventMessage, deleteEventMessage } from "../../lib/eventChat";
@@ -13,7 +13,7 @@ function formatNames(names) {
 }
 
 export default function EventCard({ event, onEdit, isAdmin }) {
-  const me = auth.currentUser;
+  const { user: me } = useAuth();
 
   const [rsvps, setRsvpsState]       = useState([]);
   const [saving, setSaving]           = useState(false);
@@ -64,7 +64,7 @@ export default function EventCard({ event, onEdit, isAdmin }) {
 
   const myStatus = useMemo(() => {
     if (!me) return null;
-    return rsvps.find((r) => r.uid === me.uid)?.status || null;
+    return rsvps.find((r) => r.uid === me?.id)?.status || null;
   }, [rsvps, me]);
 
   // Can post if RSVP is going or interested
@@ -200,7 +200,7 @@ export default function EventCard({ event, onEdit, isAdmin }) {
 
         {/* Footer row — Edit + Discussion toggle */}
         <div className="pt-1 flex items-center justify-between gap-2">
-          {me?.uid === event.createdByUid ? (
+          {me?.id === event.createdByUid ? (
             <button
               className="rounded-lg border border-surface-border dark:border-surface-darkBorder px-3 py-2 text-xs font-semibold text-ink-sub dark:text-ink-subOnDark hover:bg-surface-border/40 dark:hover:bg-surface-darkBorder/60 transition"
               onClick={() => onEdit?.(event)}
@@ -242,7 +242,7 @@ export default function EventCard({ event, onEdit, isAdmin }) {
               </div>
             ) : (
               messages.map((msg) => {
-                const isMe = msg.createdByUid === me?.uid;
+                const isMe = msg.createdByUid === me?.id;
                 return (
                   <div
                     key={msg.id}

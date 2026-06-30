@@ -1,5 +1,6 @@
 export const DEEP_DIVE = {
   Santiago: {
+    videoId: null, // e.g. "dQw4w9WgXcQ" — the YouTube video ID (from youtu.be/ID or watch?v=ID)
     flightFromDenver: "~8–10 hrs (via LAX, MIA, or direct on LATAM/American to SCL)",
     costRange: "$3,000–$5,000 per person",
     bestWindow: "Nov–Mar (Southern Hemisphere summer) · Apr–May (mild fall, fewer crowds)",
@@ -58,6 +59,7 @@ export const DEEP_DIVE = {
   },
 
   Singapore: {
+    videoId: "xi6r3hZe5Tg?start=106",
     flightFromDenver: "~20–22 hrs (via Tokyo, Seoul, or Hong Kong to SIN on Singapore Airlines)",
     costRange: "$5,000–$7,500 per person",
     bestWindow: "Feb–Apr (least rain) · avoid Nov–Jan (monsoon season)",

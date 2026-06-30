@@ -1,138 +1,84 @@
-// src/lib/gallery.js
-// Gallery feature: Firebase Storage uploads + Firestore metadata
-// Mirrors the pattern used in chat.js and explore.js
+import { supabase, COHORT_ID } from "./supabase";
 
-import {
-  collection,
-  addDoc,
-  deleteDoc,
-  doc,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  where,
-  updateDoc,
-  arrayUnion,
-  arrayRemove,
-} from "firebase/firestore";
-import {
-  ref,
-  uploadBytesResumable,
-  getDownloadURL,
-  deleteObject,
-} from "firebase/storage";
-import { db, storage, COHORT_ID } from "./firebase";
+const BUCKET = "gallery";
 
-// ─── Firestore path ────────────────────────────────────────────────────────────
-// cohorts/{cohortId}/photos/{photoId}
-const photosCol = () =>
-  collection(db, "cohorts", COHORT_ID, "photos");
+function mapPhoto(row) {
+  return {
+    id: row.id,
+    url: row.url,
+    storagePath: row.storage_path,
+    city: row.city,
+    uploaderUid: row.uploader_uid,
+    uploaderName: row.uploader_name,
+    createdAt: row.created_at,
+    likes: (row.photo_likes || []).map((l) => l.uid),
+  };
+}
 
-// ─── Subscribe ─────────────────────────────────────────────────────────────────
-/**
- * Real-time listener for all photos in the cohort.
- * Returns an unsubscribe function. Calls onData(photos[]) on every change.
- * Optionally filter by city: "singapore" | "vietnam" | null (all)
- */
 export function subscribePhotos(onData, city = null) {
-  let q = query(photosCol(), orderBy("createdAt", "desc"));
-  if (city) {
-    q = query(photosCol(), where("city", "==", city), orderBy("createdAt", "desc"));
+  let active = true;
+
+  async function fetch() {
+    let q = supabase
+      .from("photos")
+      .select("*, photo_likes(uid)")
+      .eq("cohort_id", COHORT_ID)
+      .order("created_at", { ascending: false });
+    if (city) q = q.eq("city", city);
+    const { data } = await q;
+    if (active) onData((data || []).map(mapPhoto));
   }
 
-  return onSnapshot(q, (snap) => {
-    const photos = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    onData(photos);
-  });
+  fetch();
+
+  const channel = supabase
+    .channel(`photos-${COHORT_ID}-${city || "all"}`)
+    .on("postgres_changes", { event: "*", schema: "public", table: "photos" }, fetch)
+    .on("postgres_changes", { event: "*", schema: "public", table: "photo_likes" }, fetch)
+    .subscribe();
+
+  return () => {
+    active = false;
+    supabase.removeChannel(channel);
+  };
 }
 
-// ─── Upload ────────────────────────────────────────────────────────────────────
-/**
- * Upload a photo file to Firebase Storage, then write metadata to Firestore.
- *
- * @param {File}   file         - The image File object from <input type="file">
- * @param {object} meta         - { city, uploaderUid, uploaderName }
- * @param {function} onProgress - Called with 0–100 as upload progresses
- * @returns {Promise<string>}   - Resolves with the new Firestore doc ID
- */
 export async function uploadPhoto(file, { city, uploaderUid, uploaderName }, onProgress) {
-  // Validate file type client-side (Storage rules enforce server-side too)
-  if (!file.type.startsWith("image/")) {
-    throw new Error("Only image files are allowed.");
-  }
-  if (file.size > 10 * 1024 * 1024) {
-    throw new Error("Photos must be under 10 MB.");
-  }
+  if (!file.type.startsWith("image/")) throw new Error("Only image files are allowed.");
+  if (file.size > 10 * 1024 * 1024) throw new Error("Photos must be under 10 MB.");
 
-  // Build a unique storage path: photos/{cohortId}/{uid}/{timestamp}_{filename}
   const ext = file.name.split(".").pop();
-  const timestamp = Date.now();
-  const storagePath = `photos/${COHORT_ID}/${uploaderUid}/${timestamp}.${ext}`;
-  const storageRef = ref(storage, storagePath);
+  const storagePath = `${COHORT_ID}/${uploaderUid}/${Date.now()}.${ext}`;
 
-  // Upload with progress tracking
-  await new Promise((resolve, reject) => {
-    const task = uploadBytesResumable(storageRef, file, {
-      contentType: file.type,
-    });
+  const { error: uploadError } = await supabase.storage
+    .from(BUCKET)
+    .upload(storagePath, file, { contentType: file.type, upsert: false });
+  if (uploadError) throw new Error(uploadError.message);
 
-    task.on(
-      "state_changed",
-      (snap) => {
-        const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
-        if (onProgress) onProgress(pct);
-      },
-      reject,
-      () => resolve()
-    );
-  });
+  if (onProgress) onProgress(100);
 
-  // Get public download URL
-  const url = await getDownloadURL(storageRef);
+  const { data: { publicUrl: url } } = supabase.storage.from(BUCKET).getPublicUrl(storagePath);
 
-  // Write metadata to Firestore
-  const docRef = await addDoc(photosCol(), {
+  const { error: insertError } = await supabase.from("photos").insert({
+    cohort_id: COHORT_ID,
     url,
-    storagePath,
-    city,                  // "singapore" | "vietnam"
-    uploaderUid,
-    uploaderName,
-    createdAt: serverTimestamp(),
+    storage_path: storagePath,
+    city,
+    uploader_uid: uploaderUid,
+    uploader_name: uploaderName,
   });
-
-  return docRef.id;
+  if (insertError) throw new Error(insertError.message);
 }
 
-// ─── Likes ─────────────────────────────────────────────────────────────────────
-/**
- * Toggle a ❤️ reaction on a photo for the current user.
- * Likes are stored as an array of uids on the photo doc: likes: [uid, uid, ...]
- * Uses Firestore arrayUnion/arrayRemove so concurrent toggles are safe.
- *
- * @param {string} photoId  - Firestore doc ID
- * @param {string} uid      - Current user's uid
- * @param {boolean} liked   - Whether the user currently likes this photo
- */
 export async function toggleLike(photoId, uid, liked) {
-  const photoRef = doc(db, "cohorts", COHORT_ID, "photos", photoId);
-  await updateDoc(photoRef, {
-    likes: liked ? arrayRemove(uid) : arrayUnion(uid),
-  });
+  if (liked) {
+    await supabase.from("photo_likes").delete().match({ photo_id: photoId, uid });
+  } else {
+    await supabase.from("photo_likes").insert({ photo_id: photoId, uid });
+  }
 }
 
-// ─── Delete ────────────────────────────────────────────────────────────────────
-/**
- * Admin-only: delete a photo from both Storage and Firestore.
- * Firestore rules enforce that only admins can delete.
- *
- * @param {object} photo - Full photo doc including { id, storagePath }
- */
 export async function deletePhoto(photo) {
-  // Delete from Storage first
-  const storageRef = ref(storage, photo.storagePath);
-  await deleteObject(storageRef);
-
-  // Then delete Firestore metadata doc
-  await deleteDoc(doc(db, "cohorts", COHORT_ID, "photos", photo.id));
+  await supabase.storage.from(BUCKET).remove([photo.storagePath]);
+  await supabase.from("photos").delete().eq("id", photo.id);
 }

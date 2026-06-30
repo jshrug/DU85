@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "../lib/firebase";
+import { useAuth } from "../lib/AuthContext";
 import { subscribeCohortChat, sendCohortMessage, deleteCohortMessage } from "../lib/chat";
 
 function formatTime(ts) {
@@ -16,7 +15,7 @@ function formatDate(ts) {
 }
 
 export default function Chat({ isAdmin }) {
-  const user = auth.currentUser;
+  const { user } = useAuth();
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -25,22 +24,10 @@ export default function Chat({ isAdmin }) {
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
 
-  const [authReady, setAuthReady] = useState(false);
-
-  // Wait for Firebase auth to confirm the user is signed in before subscribing
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      if (u) setAuthReady(true);
-    });
-    return () => unsub();
-  }, []);
-
-  // Subscribe to real-time messages only once auth is confirmed
-  useEffect(() => {
-    if (!authReady) return;
-    const unsub = subscribeCohortChat(setMessages);
-    return () => unsub();
-  }, [authReady]);
+    if (!user) return;
+    return subscribeCohortChat(setMessages);
+  }, [user]);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -127,7 +114,7 @@ export default function Chat({ isAdmin }) {
               );
             }
 
-            const isOwn = item.createdByUid === user?.uid;
+            const isOwn = item.createdByUid === user?.id;
 
             return (
               <div

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getDoc } from "firebase/firestore";
 import { subscribePhotos, uploadPhoto, deletePhoto, toggleLike } from "../lib/gallery";
-import { memberDoc } from "../lib/members";
+import { getMemberDisplayName } from "../lib/members";
+import { useAuth } from "../lib/AuthContext";
 
 const CITIES = [
   { key: "all", label: "All Photos" },
@@ -9,7 +9,8 @@ const CITIES = [
   { key: "vietnam", label: "Vietnam" },
 ];
 
-export default function Gallery({ user, isAdmin }) {
+export default function Gallery({ isAdmin }) {
+  const { user } = useAuth();
   const [activeCity, setActiveCity] = useState("all");
   const [photos, setPhotos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -32,21 +33,20 @@ export default function Gallery({ user, isAdmin }) {
   const handleFileChange = useCallback(
     async (event) => {
       const file = event.target.files?.[0];
-      if (!file || !user?.uid) return;
+      if (!file || !user?.id) return;
 
       setError(null);
       setUploading(true);
       setUploadProgress(0);
 
       try {
-        const memberSnap = await getDoc(memberDoc(user.uid));
-        const uploaderName = memberSnap.data()?.displayName || user.email;
+        const uploaderName = await getMemberDisplayName(user.id);
 
         await uploadPhoto(
           file,
           {
             city: uploadCity,
-            uploaderUid: user.uid,
+            uploaderUid: user.id,
             uploaderName,
           },
           setUploadProgress
@@ -66,10 +66,10 @@ export default function Gallery({ user, isAdmin }) {
 
   const handleLike = useCallback(
     async (photo) => {
-      if (!user?.uid) return;
-      const liked = (photo.likes || []).includes(user.uid);
+      if (!user?.id) return;
+      const liked = (photo.likes || []).includes(user.id);
       try {
-        await toggleLike(photo.id, user.uid, liked);
+        await toggleLike(photo.id, user.id, liked);
       } catch {
         setError("Couldn't update like. Please try again.");
       }
@@ -191,7 +191,7 @@ export default function Gallery({ user, isAdmin }) {
                 key={photo.id}
                 photo={photo}
                 isAdmin={isAdmin}
-                userUid={user?.uid}
+                userUid={user?.id}
                 onOpen={() => setLightbox(photo)}
                 onDelete={() => handleDelete(photo)}
                 onLike={() => handleLike(photo)}
@@ -205,7 +205,7 @@ export default function Gallery({ user, isAdmin }) {
         <Lightbox
           photo={lightbox}
           isAdmin={isAdmin}
-          userUid={user?.uid}
+          userUid={user?.id}
           onClose={() => setLightbox(null)}
           onDelete={() => handleDelete(lightbox)}
           onLike={() => handleLike(lightbox)}

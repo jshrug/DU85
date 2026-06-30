@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { auth, db, COHORT_ID } from "../lib/firebase.js";
-import { collection, onSnapshot, query, orderBy } from "firebase/firestore";
+import { useAuth } from "../lib/AuthContext";
 import {
   subscribeTeams,
   subscribeMyTeam,
@@ -18,6 +17,7 @@ import {
   updateMeeting,
   deleteMeeting,
 } from "../lib/teams.js";
+import { subscribeCohortMembers } from "../lib/members.js";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -191,7 +191,7 @@ function Modal({ open, onClose, title, children }) {
 // ── Team Chat ──────────────────────────────────────────────────────────────────
 
 function TeamChat({ teamId, isAdmin }) {
-  const user = auth.currentUser;
+  const { user } = useAuth();
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
@@ -211,11 +211,7 @@ function TeamChat({ teamId, isAdmin }) {
     if (!trimmed || !user) return;
     setSending(true);
     try {
-      const memberDoc = await import("firebase/firestore").then(({ getDoc, doc }) =>
-        getDoc(doc(db, "cohorts", COHORT_ID, "members", user.uid))
-      );
-      const displayName = memberDoc.exists() ? memberDoc.data().displayName : user.email;
-      await sendTeamMessage(teamId, trimmed, user.uid, displayName);
+      await sendTeamMessage(teamId, trimmed, user.id);
       setText("");
     } finally {
       setSending(false);
@@ -249,7 +245,7 @@ function TeamChat({ teamId, isAdmin }) {
           </p>
         )}
         {messages.map((msg) => {
-          const isOwn = msg.createdByUid === user?.uid;
+          const isOwn = msg.createdByUid === user?.id;
           return (
             <div key={msg.id}
               className="flex items-end gap-2"
@@ -320,12 +316,12 @@ function TeamChat({ teamId, isAdmin }) {
 // ── Meetings list ──────────────────────────────────────────────────────────────
 
 function MeetingsList({ teamId, isAdmin }) {
+  const { user } = useAuth();
   const [meetings, setMeetings] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [editingMeeting, setEditingMeeting] = useState(null);
   const [form, setForm] = useState({ title: "", dateTime: "", location: "", notes: "" });
   const [saving, setSaving] = useState(false);
-  const user = auth.currentUser;
 
   useEffect(() => {
     if (!teamId) return;
@@ -362,7 +358,7 @@ function MeetingsList({ teamId, isAdmin }) {
       if (editingMeeting) {
         await updateMeeting(teamId, editingMeeting.id, payload);
       } else {
-        await createMeeting(teamId, payload, user.uid);
+        await createMeeting(teamId, payload, user?.id);
       }
       setShowForm(false);
     } finally {
@@ -521,13 +517,7 @@ function AdminPanel({ user }) {
 
   // Load all cohort members for the assign dropdown
   useEffect(() => {
-    const q = query(
-      collection(db, "cohorts", COHORT_ID, "members"),
-      orderBy("displayName", "asc")
-    );
-    return onSnapshot(q, (snap) => {
-      setCohortMembers(snap.docs.map((d) => ({ uid: d.id, ...d.data() })));
-    });
+    return subscribeCohortMembers(setCohortMembers);
   }, []);
 
   // Subscribe to selected team's members
@@ -540,7 +530,7 @@ function AdminPanel({ user }) {
     if (!newTeamName.trim()) return;
     setCreating(true);
     try {
-      const id = await createTeam(newTeamName.trim(), user.uid);
+      const id = await createTeam(newTeamName.trim(), user?.id);
       setSelectedTeamId(id);
       setShowCreate(false);
       setNewTeamName("");
@@ -751,7 +741,7 @@ function MemberView({ user, isAdmin }) {
 
   useEffect(() => {
     if (!user) return;
-    return subscribeMyTeam(user.uid, (team) => setMyTeam(team));
+    return subscribeMyTeam(user.id, (team) => setMyTeam(team));
   }, [user]);
 
   useEffect(() => {
@@ -803,7 +793,7 @@ function MemberView({ user, isAdmin }) {
                 <AvatarInitial name={m.displayName} size={32} />
                 <span style={{ fontSize: 14, color: "#fff" }}>
                   {m.displayName}
-                  {m.uid === user.uid && (
+                  {m.uid === user?.id && (
                     <span style={{ fontSize: 11, color: "rgba(196,150,42,0.6)", marginLeft: 6 }}>you</span>
                   )}
                 </span>
@@ -825,7 +815,7 @@ function MemberView({ user, isAdmin }) {
 // ── Main Team page ─────────────────────────────────────────────────────────────
 
 export default function Team({ isAdmin }) {
-  const user = auth.currentUser;
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState(isAdmin ? "manage" : "my-team");
 
   // If user is admin, show tabs: My Team | Manage Teams

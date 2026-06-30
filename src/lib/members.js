@@ -1,90 +1,117 @@
-import {
-  doc,
-  getDoc,
-  onSnapshot,
-  serverTimestamp,
-  setDoc,
-  updateDoc,
-} from "firebase/firestore";
-import { updateProfile } from "firebase/auth";
-import { auth, db, COHORT_ID } from "./firebase";
+import { supabase, COHORT_ID } from "./supabase";
 
-/**
- * Returns ref to cohorts/{cohortId}/members/{uid}
- */
-export function memberDoc(uid) {
-  return doc(db, "cohorts", COHORT_ID, "members", uid);
+function mapMember(row) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    uid: row.id,
+    email: row.email,
+    displayName: row.display_name,
+    role: row.role,
+    defaultCity: row.default_city,
+    teamId: row.team_id,
+    createdAt: row.created_at,
+    lastLoginAt: row.last_login_at,
+  };
 }
 
-/**
- * Create the member profile on first login.
- * On subsequent logins, update only non-destructive fields (email, lastLoginAt).
- * DO NOT overwrite displayName/defaultCity that the user set in-app.
- */
 export async function upsertMemberProfile(user) {
-  if (!user?.uid) throw new Error("Missing user.");
-
-  const ref = memberDoc(user.uid);
-  const snap = await getDoc(ref);
-
+  if (!user?.id) throw new Error("Missing user.");
   const emailLower = (user.email || "").toLowerCase();
 
-  if (!snap.exists()) {
-    // First time: initialize defaults
-    await setDoc(ref, {
-      uid: user.uid,
+  const { data: existing } = await supabase
+    .from("members")
+    .select("id")
+    .eq("id", user.id)
+    .single();
+
+  if (!existing) {
+    await supabase.from("members").insert({
+      id: user.id,
+      cohort_id: COHORT_ID,
       email: emailLower,
-      displayName: user.displayName || "Member",
+      display_name: user.user_metadata?.full_name || "Member",
       role: "member",
-      defaultCity: "Singapore",
-      createdAt: serverTimestamp(),
-      lastLoginAt: serverTimestamp(),
+      default_city: "Singapore",
     });
     return { created: true };
   }
 
-  // Existing member: only update safe, non-destructive fields
-  await updateDoc(ref, {
+  await supabase.from("members").update({
     email: emailLower,
-    lastLoginAt: serverTimestamp(),
-  });
+    last_login_at: new Date().toISOString(),
+  }).eq("id", user.id);
 
   return { created: false };
 }
 
-/**
- * Subscribe to the current member doc in real-time
- */
 export function subscribeMember(uid, cb) {
-  const ref = memberDoc(uid);
-  return onSnapshot(ref, (snap) => {
-    cb(snap.exists() ? { id: snap.id, ...snap.data() } : null);
-  });
+  let active = true;
+
+  async function fetch() {
+    const { data } = await supabase
+      .from("members")
+      .select("*")
+      .eq("id", uid)
+      .single();
+    if (active) cb(mapMember(data));
+  }
+
+  fetch();
+
+  const channel = supabase
+    .channel(`member-${uid}`)
+    .on("postgres_changes", {
+      event: "*",
+      schema: "public",
+      table: "members",
+      filter: `id=eq.${uid}`,
+    }, fetch)
+    .subscribe();
+
+  return () => {
+    active = false;
+    supabase.removeChannel(channel);
+  };
 }
 
-/**
- * Update safe profile fields only (must match Firestore rules)
- */
 export async function updateMyProfile(uid, { displayName, defaultCity }) {
-  const ref = memberDoc(uid);
-
   const patch = {};
-  if (typeof displayName === "string") patch.displayName = displayName.trim();
-  if (typeof defaultCity === "string") patch.defaultCity = defaultCity;
-
+  if (typeof displayName === "string") patch.display_name = displayName.trim();
+  if (typeof defaultCity === "string") patch.default_city = defaultCity;
   if (Object.keys(patch).length === 0) return;
 
-  await updateDoc(ref, patch);
+  const { error } = await supabase.from("members").update(patch).eq("id", uid);
+  if (error) throw new Error(error.message);
+}
 
-  // Keep Firebase Auth displayName in sync with the member profile so that
-  // code paths reading auth.currentUser.displayName (RSVPs, event creation,
-  // chat messages) get the user's real name instead of falling back to
-  // "Member".
-  if (typeof patch.displayName === "string" && auth.currentUser?.uid === uid) {
-    try {
-      await updateProfile(auth.currentUser, { displayName: patch.displayName });
-    } catch {
-      // Non-fatal: the member doc is still the source of truth.
-    }
+export function subscribeCohortMembers(cb) {
+  let active = true;
+
+  async function fetch() {
+    const { data } = await supabase
+      .from("members")
+      .select("*")
+      .eq("cohort_id", COHORT_ID)
+      .order("display_name", { ascending: true });
+    if (active) cb((data || []).map(mapMember));
   }
+
+  fetch();
+
+  const channel = supabase
+    .channel(`cohort-members-${COHORT_ID}`)
+    .on("postgres_changes", { event: "*", schema: "public", table: "members" }, fetch)
+    .subscribe();
+
+  return () => { active = false; supabase.removeChannel(channel); };
+}
+
+export async function getMemberDisplayName(uid) {
+  const { data } = await supabase
+    .from("members")
+    .select("display_name, email")
+    .eq("id", uid)
+    .single();
+  return data?.display_name || data?.email || "Member";
 }

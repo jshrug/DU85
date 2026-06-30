@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { auth } from "../lib/firebase";
+import { useAuth } from "../lib/AuthContext";
 import { subscribeMember } from "../lib/members";
 import { subscribeEventsByCity, subscribeRsvps } from "../lib/events";
 import EventCard from "../components/features/EventCard.jsx";
@@ -9,7 +9,7 @@ const CITIES = ["Singapore", "Ho Chi Minh City"];
 const LS_KEY = "global84_lastViewedEventsAt";
 
 export default function Events({ onViewed }) {
-  const user = auth.currentUser;
+  const { user } = useAuth();
   const [viewedAt] = useState(() => Date.now());
   const [member, setMember] = useState(null);
   const [selectedCity, setSelectedCity] = useState("Singapore");
@@ -24,9 +24,9 @@ export default function Events({ onViewed }) {
   }, [onViewed, viewedAt]);
 
   useEffect(() => {
-    if (!user?.uid) return;
-    return subscribeMember(user.uid, setMember);
-  }, [user?.uid]);
+    if (!user?.id) return;
+    return subscribeMember(user.id, setMember);
+  }, [user?.id]);
 
   const city = member?.defaultCity || selectedCity;
 
@@ -45,14 +45,14 @@ export default function Events({ onViewed }) {
   }, [events]);
 
   const { newForYou, allEvents } = useMemo(() => {
-    const uid = user?.uid;
+    const uid = user?.id;
     const newItems = [];
     const regularItems = [];
 
     for (const event of events) {
       const rsvps = allRsvps[event.id] ?? [];
       const hasRsvp = rsvps.some((rsvp) => rsvp.uid === uid);
-      const eventDate = event.startTime?.toMillis?.() ?? 0;
+      const eventDate = event.startTime ? new Date(event.startTime).getTime() : 0;
 
       if (!hasRsvp && eventDate > viewedAt) {
         newItems.push(event);
@@ -61,11 +61,11 @@ export default function Events({ onViewed }) {
       }
     }
 
-    newItems.sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
-    regularItems.sort((a, b) => (a.startTime?.toMillis?.() ?? 0) - (b.startTime?.toMillis?.() ?? 0));
+    newItems.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+    regularItems.sort((a, b) => new Date(a.startTime || 0) - new Date(b.startTime || 0));
 
     return { newForYou: newItems, allEvents: regularItems };
-  }, [allRsvps, events, user?.uid, viewedAt]);
+  }, [allRsvps, events, user?.id, viewedAt]);
 
   function openCreate() {
     setEditing(null);

@@ -3,11 +3,7 @@
 // Admin-managed: admins can add and delete items. All cohort members can view.
 
 import { useState, useEffect } from "react";
-import {
-  collection, addDoc, deleteDoc, doc,
-  onSnapshot, query, orderBy, serverTimestamp,
-} from "firebase/firestore";
-import { db, COHORT_ID } from "../lib/firebase.js";
+import { subscribeMedia, addMediaItem, deleteMediaItem } from "../lib/media.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const CITIES = [
@@ -20,26 +16,6 @@ const TYPES = [
   { key: "video",   label: "Videos",   icon: "▶️" },
   { key: "article", label: "Articles", icon: "📰" },
 ];
-
-// ── Firestore helpers ─────────────────────────────────────────────────────────
-function mediaCol() {
-  return collection(db, "cohorts", COHORT_ID, "media");
-}
-
-function subscribeMedia(callback) {
-  const q = query(mediaCol(), orderBy("createdAt", "desc"));
-  return onSnapshot(q, (snap) => {
-    callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-  });
-}
-
-async function addMediaItem(item) {
-  await addDoc(mediaCol(), { ...item, createdAt: serverTimestamp() });
-}
-
-async function deleteMediaItem(id) {
-  await deleteDoc(doc(db, "cohorts", COHORT_ID, "media", id));
-}
 
 // ── YouTube helpers ──────────────────────────────────────────────────────────
 function getYouTubeId(url) {

@@ -1,70 +1,76 @@
-import {
-  collection,
-  deleteDoc,
-  doc,
-  getDoc,
-  limitToLast,
-  onSnapshot,
-  orderBy,
-  query,
-  serverTimestamp,
-  addDoc,
-} from "firebase/firestore";
-import { auth, db, COHORT_ID } from "./firebase";
+import { supabase } from "./supabase";
 
-// ─── Collection ref ───────────────────────────────────────────────────────────
-
-export function eventMessagesCol(eventId) {
-  return collection(db, "cohorts", COHORT_ID, "events", eventId, "messages");
-}
-
-// ─── Subscribe ────────────────────────────────────────────────────────────────
-
-/**
- * Real-time listener for the last 50 messages on an event, oldest-first.
- * Returns an unsubscribe function.
- */
-export function subscribeEventChat(eventId, cb) {
-  const q = query(
-    eventMessagesCol(eventId),
-    orderBy("createdAt", "asc"),
-    limitToLast(50)
-  );
-  return onSnapshot(q, (snap) => {
-    cb(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
-  });
-}
-
-// ─── Send ─────────────────────────────────────────────────────────────────────
-
-/**
- * Post a message to an event's discussion thread.
- * Throws if the user is not signed in or the message is empty.
- */
-export async function sendEventMessage(eventId, text) {
-  const user = auth.currentUser;
+async function getCurrentUser() {
+  const { data: { session } } = await supabase.auth.getSession();
+  const user = session?.user;
   if (!user) throw new Error("Not signed in.");
+  return user;
+}
 
+function mapMessage(row) {
+  return {
+    id: row.id,
+    text: row.text,
+    createdAt: row.created_at,
+    createdByUid: row.created_by_uid,
+    createdByName: row.created_by_name,
+  };
+}
+
+export function subscribeEventChat(eventId, cb) {
+  let active = true;
+
+  async function fetch() {
+    const { data } = await supabase
+      .from("event_messages")
+      .select("*")
+      .eq("event_id", eventId)
+      .order("created_at", { ascending: true })
+      .limit(50);
+    if (active) cb((data || []).map(mapMessage));
+  }
+
+  fetch();
+
+  const channel = supabase
+    .channel(`event-chat-${eventId}`)
+    .on("postgres_changes", {
+      event: "*",
+      schema: "public",
+      table: "event_messages",
+      filter: `event_id=eq.${eventId}`,
+    }, fetch)
+    .subscribe();
+
+  return () => {
+    active = false;
+    supabase.removeChannel(channel);
+  };
+}
+
+export async function sendEventMessage(eventId, text) {
+  const user = await getCurrentUser();
   const trimmed = text.trim();
   if (!trimmed) throw new Error("Message cannot be empty.");
   if (trimmed.length > 1000) throw new Error("Message too long (max 1000 characters).");
 
-  // Pull display name from member profile for consistent attribution
-  const memberSnap = await getDoc(doc(db, "cohorts", COHORT_ID, "members", user.uid));
-  const displayName = memberSnap.exists()
-    ? memberSnap.data()?.displayName || "Member"
-    : "Member";
+  const { data: member } = await supabase
+    .from("members")
+    .select("display_name")
+    .eq("id", user.id)
+    .single();
+  const displayName = member?.display_name || "Member";
 
-  await addDoc(eventMessagesCol(eventId), {
+  const { error } = await supabase.from("event_messages").insert({
+    event_id: eventId,
     text: trimmed,
-    createdAt: serverTimestamp(),
-    createdByUid: user.uid,
-    createdByName: displayName,
+    created_by_uid: user.id,
+    created_by_name: displayName,
   });
+  if (error) throw new Error(error.message);
 }
 
-// ─── Delete (admin only — enforced by Firestore rules) ───────────────────────
-
 export async function deleteEventMessage(eventId, messageId) {
-  await deleteDoc(doc(eventMessagesCol(eventId), messageId));
+  const { error } = await supabase.from("event_messages").delete().eq("id", messageId);
+  if (error) throw new Error(error.message);
 }
