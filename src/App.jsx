@@ -5297,6 +5297,70 @@ function SectionTitle({ eyebrow, title }) {
   );
 }
 
+// One-time login reminder for the Thunderbird School of Global Management survey.
+// "I've completed it" stores a per-user flag so it never shows again on this device.
+function SurveyReminderModal() {
+  const { user } = useAuth();
+  const storageKey = user ? `g85_thunderbird_survey_done:${user.id}` : null;
+  const [dismissed, setDismissed] = useState(true);
+
+  useEffect(() => {
+    if (!storageKey) { setDismissed(true); return; }
+    let done = false;
+    try { done = localStorage.getItem(storageKey) === "1"; } catch { done = false; }
+    setDismissed(done);
+  }, [storageKey]);
+
+  if (!user || dismissed) return null;
+
+  function markComplete() {
+    try { if (storageKey) localStorage.setItem(storageKey, "1"); } catch { /* ignore */ }
+    setDismissed(true);
+  }
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-end justify-center sm:items-center">
+      <div className="absolute inset-0 bg-black/75 backdrop-blur-sm" />
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="relative z-10 max-h-[88vh] w-full max-w-md overflow-y-auto rounded-t-[2rem] border border-white/10 p-6 sm:rounded-[2rem]"
+        style={{ background: "rgba(12,10,16,0.98)" }}
+      >
+        <div className="text-2xl">📋</div>
+        <p className="mt-3 text-[9px] uppercase tracking-[0.32em] font-black" style={{ color: COLORS.champagne }}>
+          Action requested
+        </p>
+        <h2 className="mt-1 text-2xl font-black" style={{ fontFamily: "Georgia, serif" }}>Thunderbird survey</h2>
+        <p className="mt-3 text-sm leading-6 text-white/70">
+          The Thunderbird School of Global Management has asked the cohort to complete a short survey. Please take a few minutes to fill it out.
+        </p>
+        <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-sm leading-6 text-white/70">
+          <div>
+            The email comes from <span className="font-bold text-white">surveys@perfprog.com</span>. If you do not see it, check your spam or promotions folder.
+          </div>
+          <div className="mt-2">
+            Did not receive it? Contact <span className="font-bold text-white">ngmisupport@thunderbird.edu</span>.
+          </div>
+        </div>
+        <button
+          onClick={markComplete}
+          className="mt-5 w-full rounded-2xl px-4 py-3.5 font-black"
+          style={{ background: `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne}, ${COLORS.ember})`, color: "#17060b" }}
+        >
+          I&apos;ve completed it
+        </button>
+        <button
+          onClick={() => setDismissed(true)}
+          className="mt-2 w-full rounded-2xl px-4 py-3 text-sm font-bold text-white/55 hover:text-white"
+        >
+          Remind me later
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const { user } = useAuth();
   const [showSplash, setShowSplash] = useState(true);
@@ -5399,6 +5463,8 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Shell>
+
+      <SurveyReminderModal />
     </>
   );
 }

@@ -125,7 +125,7 @@ BRIEF DUE DATES:
 - City B briefs due to Porter: July 15, 2026
 
 OPEN OFFICE HOURS (Teams call, optional):
-- July 5, 2026: 8:00 – 8:45am — open call to discuss destination options, voting, logistics, or anything about the trip. No agenda.
+- July 8, 2026: 8:00 – 8:45am — open call to discuss destination options, voting, logistics, or anything about the trip. No agenda.
 - July 15, 2026: 8:00 – 8:45am — same format. City B briefs also due this day.
 
 VOTING NOTES:
@@ -375,13 +375,59 @@ On June 26, 2026, Cohort 85 will be assigned teams and each team will be assigne
 
 When country briefs have been submitted, Porter has access to them (they will appear in the SUBMITTED COUNTRY BRIEFS section below, if any exist). Porter should reference the briefs when relevant, and treat them as the cohort's own research. Credit the team when referencing their brief.`;
 
+// Briefs that ship with the app. Submitted briefs (from Supabase) are merged on top.
+const BUILTIN_BRIEFS = [
+  {
+    country_name: "Singapore",
+    team_members: "Chelsea",
+    submitted_at: "2026-06-29",
+    content: `Why Singapore Is the Best Option — Cohort 85 Brief
+
+The headline case
+The only city on the ballot that offers something for every industry represented in Cohort 85, and the clearest, lowest-risk, most learning-rich choice overall.
+A once-in-a-generation economic and political case study you cannot replicate in a classroom: #1 in the world for economic freedom, yet only "partly free" — prosperity engineered from nothing but a location.
+
+A masterclass in conquering scarcity
+From third-world slums and zero natural resources (it still imports much of its water) to a high-income global hub in a single generation.
+A living lesson in how a state overcomes land, water, food, and energy scarcity, and the governance tradeoffs it accepted to do it.
+
+Geography turned into an empire of trade
+Commands the Strait of Malacca, the shortest route between the Indian Ocean and Pacific, with up to a third of global trade passing its doorstep.
+World's #2 container port (record 44.66M TEU) and #1 transshipment hub (~90% of cargo).
+
+Economic and strategic standing
+#1 in economic freedom (Heritage, 2025 & 2026) and top-tier GDP per capita, powered by rule of law, near-zero corruption, and policy predictability.
+The developed gateway to Southeast Asia, set to be the world's 4th-largest economy bloc by 2030, and the regional HQ base from which global firms run Asia.
+
+City of the future: innovation and sustainability
+Innovation born of necessity: water tech (NEWater, automated Tuas desalination), fintech (MAS, Project Ubin; finance ~12% of GDP), and Smart Nation deep tech.
+A genuine world leader in sustainability: green public housing (HDB Tengah), 30-by-30 food security, vertical farming, and a "city in a garden."
+
+Something for everyone in the cohort
+Every field in the room maps to a world-class Singapore counterpart: payments, wealth, healthcare, energy, automation, hardware, aerospace, government, plus education (edtech + SkillsFuture), food (Sustenir indoor vertical farming), construction/real estate (green, carbon-neutral housing), and digital entrepreneurship (Block71).
+
+Lowest-risk, most executable trip
+#1 safest of all eight destinations on the Numbeo Safety Index; U.S. advisory at Level 1; crime near zero.
+Stable politics (no election near the trip), English-speaking, world-class logistics, and the program's established company relationships.
+
+Wins the head-to-head
+The only option that scores top marks across every dimension: safety, innovation, emerging-market access, stability, and logistics. Each rival leads on one axis; Singapore leads on all of them.
+
+Answers the course question
+It delivers on all six evaluation questions and answers "what would you like to learn?" directly: how governance and geography shape commerce, where the rules of the game matter as much as any market or product.
+
+Watch: National Geographic episode on Singapore's economy and innovation, covering several of the cutting-edge industries doing business there. https://www.youtube.com/watch?v=xi6r3hZe5Tg&t=106s`,
+  },
+];
+
 export function buildSystemWithBriefs(briefs) {
-  if (!briefs || briefs.length === 0) return SYSTEM;
-  const briefsSection = briefs.map((b) => {
+  const all = [...BUILTIN_BRIEFS, ...(Array.isArray(briefs) ? briefs : [])];
+  if (all.length === 0) return SYSTEM;
+  const briefsSection = all.map((b) => {
     const team = b.team_members ? ` (Team: ${b.team_members})` : "";
     return `COUNTRY: ${b.country_name}${team}\nSubmitted: ${new Date(b.submitted_at).toLocaleDateString()}\n\n${b.content}`;
   }).join("\n\n---\n\n");
-  return `${SYSTEM}\n\nSUBMITTED COUNTRY BRIEFS (${briefs.length} brief${briefs.length !== 1 ? "s" : ""} received so far):\n\n${briefsSection}`;
+  return `${SYSTEM}\n\nSUBMITTED COUNTRY BRIEFS (${all.length} brief${all.length !== 1 ? "s" : ""} received so far):\n\n${briefsSection}`;
 }
 
 export default async function handler(req, res) {
