@@ -5298,24 +5298,29 @@ function SectionTitle({ eyebrow, title }) {
 }
 
 // One-time login reminder for the Thunderbird School of Global Management survey.
-// "I've completed it" stores a per-user flag so it never shows again on this device.
+// "I've completed it" is stored on the user's account (user_metadata), so it follows
+// them across devices. localStorage is kept as a fast local cache.
 function SurveyReminderModal() {
   const { user } = useAuth();
+  const metaDone = user?.user_metadata?.thunderbird_survey_done === true;
   const storageKey = user ? `g85_thunderbird_survey_done:${user.id}` : null;
   const [dismissed, setDismissed] = useState(true);
 
   useEffect(() => {
-    if (!storageKey) { setDismissed(true); return; }
+    if (!user || !storageKey) { setDismissed(true); return; }
+    if (metaDone) { setDismissed(true); return; }
     let done = false;
     try { done = localStorage.getItem(storageKey) === "1"; } catch { done = false; }
     setDismissed(done);
-  }, [storageKey]);
+  }, [user, storageKey, metaDone]);
 
   if (!user || dismissed) return null;
 
-  function markComplete() {
-    try { if (storageKey) localStorage.setItem(storageKey, "1"); } catch { /* ignore */ }
+  async function markComplete() {
     setDismissed(true);
+    try { if (storageKey) localStorage.setItem(storageKey, "1"); } catch { /* ignore */ }
+    // Persist on the account so the reminder stays dismissed on every device.
+    try { await supabase?.auth.updateUser({ data: { thunderbird_survey_done: true } }); } catch { /* ignore */ }
   }
 
   return (
