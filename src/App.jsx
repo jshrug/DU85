@@ -58,16 +58,16 @@ const DRAWER_NAV = [
   { to: "/me", label: "Profile", icon: "👤", desc: "Preferences and saved places" },
 ];
 
-// City A champion teams — fill in after June 26 assignment session
+// City A champion teams — sign-ups as of June 30. null = still open.
 const CITY_CHAMPIONS = {
   "Santiago":   null,
-  "Seoul":      null,
-  "Singapore":  null,
-  "Istanbul":   null,
-  "Lisbon":     null,
-  "Cape Town":  null,
-  "Nairobi":    null,
-  "Kigali":     null,
+  "Seoul":      "Joseph, Jen",
+  "Singapore":  "Chelsea",
+  "Istanbul":   "Joi",
+  "Lisbon":     "Adriel",
+  "Cape Town":  "Kelly",
+  "Nairobi":    "Kris, John, Hannah",
+  "Kigali":     "Bri, Dani",
 };
 
 
@@ -623,8 +623,8 @@ const COHORT_EVENTS = [
     id: "cohort-oh-1",
     source: "Teams Call",
     title: "Open Office Hours",
-    date: "Jul 5",
-    fullDate: new Date("2026-07-05"),
+    date: "Jul 8",
+    fullDate: new Date("2026-07-08"),
     detail: "8:00 – 8:45am. Open call to discuss destination options, voting, logistics, or anything else about the trip. No agenda — just show up with questions.",
     badge: "Optional",
   },
