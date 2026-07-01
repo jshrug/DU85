@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useId } from "react";
 import { supabase, COHORT_ID } from "../lib/supabase.js";
 
 export default function useCastCount() {
   const [state, setState] = useState({ castCount: null, routeLocked: false });
+  const id = useId();
 
   useEffect(() => {
     if (!supabase) return;
@@ -23,7 +24,7 @@ export default function useCastCount() {
     load();
 
     const ch = supabase
-      .channel("home-cast-count")
+      .channel(`home-cast-count-${id}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "cohort_votes", filter: `cohort_id=eq.${COHORT_ID}` }, load)
       .on("postgres_changes", { event: "*", schema: "public", table: "cohort_state", filter: `cohort_id=eq.${COHORT_ID}` }, load)
       .subscribe();

@@ -1,8 +1,9 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useId } from "react";
 import { supabase, COHORT_ID } from "../lib/supabase.js";
 
 export default function useLockedDestinations() {
   const [locked, setLocked] = useState({ anchorWinner: null, companionWinner: null });
+  const id = useId();
 
   useEffect(() => {
     if (!supabase) return;
@@ -17,7 +18,7 @@ export default function useLockedDestinations() {
       });
 
     const ch = supabase
-      .channel("home-state")
+      .channel(`home-state-${id}`)
       .on(
         "postgres_changes",
         { event: "*", schema: "public", table: "cohort_state", filter: `cohort_id=eq.${COHORT_ID}` },

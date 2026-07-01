@@ -143,7 +143,7 @@ CREATE TABLE IF NOT EXISTS teams (
 
 -- Add team FK to members after teams table is created
 ALTER TABLE members
-  ADD CONSTRAINT IF NOT EXISTS members_team_id_fkey
+  ADD CONSTRAINT members_team_id_fkey
   FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE SET NULL;
 
 -- Team membership
@@ -217,6 +217,49 @@ CREATE TABLE IF NOT EXISTS explore_import_logs (
   created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Destination vote tallies (one row per cast/changed vote per user per phase)
+CREATE TABLE IF NOT EXISTS cohort_votes (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cohort_id    TEXT NOT NULL,
+  vote_phase   TEXT NOT NULL,
+  country_name TEXT NOT NULL,
+  user_id      TEXT NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (cohort_id, vote_phase, user_id)
+);
+
+-- Shared destination-vote protocol state (mission index, locked winners)
+CREATE TABLE IF NOT EXISTS cohort_state (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cohort_id         TEXT NOT NULL UNIQUE,
+  mission_index     INTEGER NOT NULL DEFAULT 0,
+  anchor_winner     TEXT,
+  companion_winner  TEXT,
+  updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Porter country briefs submitted by champion teams
+CREATE TABLE IF NOT EXISTS porter_memory (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cohort_id      TEXT NOT NULL,
+  memory_type    TEXT NOT NULL DEFAULT 'country_brief',
+  country_name   TEXT NOT NULL,
+  team_members   TEXT,
+  content        TEXT NOT NULL,
+  submitted_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (cohort_id, memory_type, country_name)
+);
+
+-- Porter persistent conversation history (one row per user)
+CREATE TABLE IF NOT EXISTS porter_conversations (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  cohort_id  TEXT NOT NULL,
+  user_id    TEXT NOT NULL,
+  messages   JSONB NOT NULL DEFAULT '[]',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (cohort_id, user_id)
+);
+
 -- ─── Row Level Security ──────────────────────────────────────────────────────
 
 ALTER TABLE members             ENABLE ROW LEVEL SECURITY;
@@ -237,6 +280,10 @@ ALTER TABLE team_meetings       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE announcements       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE media_items         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE explore_import_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cohort_votes        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE cohort_state        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE porter_memory       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE porter_conversations ENABLE ROW LEVEL SECURITY;
 
 -- Helper: is the current user an admin?
 CREATE OR REPLACE FUNCTION is_admin()
@@ -329,6 +376,25 @@ CREATE POLICY "media_write" ON media_items FOR ALL USING (is_admin());
 -- explore_import_logs: admin only
 CREATE POLICY "import_logs_write" ON explore_import_logs FOR ALL USING (is_admin());
 
+-- cohort_votes / cohort_state: shared cohort-wide voting protocol, open to any authenticated member
+CREATE POLICY "cohort_votes_rw" ON cohort_votes FOR ALL USING (auth.uid() IS NOT NULL) WITH CHECK (auth.uid() IS NOT NULL);
+CREATE POLICY "cohort_state_rw" ON cohort_state FOR ALL USING (auth.uid() IS NOT NULL) WITH CHECK (auth.uid() IS NOT NULL);
+
+-- porter_memory / porter_conversations: authenticated members read/write
+CREATE POLICY "porter_memory_rw" ON porter_memory FOR ALL USING (auth.uid() IS NOT NULL) WITH CHECK (auth.uid() IS NOT NULL);
+CREATE POLICY "porter_conversations_rw" ON porter_conversations FOR ALL USING (auth.uid() IS NOT NULL) WITH CHECK (auth.uid() IS NOT NULL);
+
+-- ─── Grants ──────────────────────────────────────────────────────────────────
+-- RLS policies only take effect once the role also has the base table grant.
+-- Without this, every query fails with "permission denied for table X" (42501)
+-- regardless of how permissive the policies above are.
+
+GRANT USAGE ON SCHEMA public TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO authenticated;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO authenticated;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO authenticated;
+
 -- ─── Realtime ────────────────────────────────────────────────────────────────
 
 ALTER PUBLICATION supabase_realtime ADD TABLE members;
@@ -347,6 +413,8 @@ ALTER PUBLICATION supabase_realtime ADD TABLE team_messages;
 ALTER PUBLICATION supabase_realtime ADD TABLE team_meetings;
 ALTER PUBLICATION supabase_realtime ADD TABLE announcements;
 ALTER PUBLICATION supabase_realtime ADD TABLE media_items;
+ALTER PUBLICATION supabase_realtime ADD TABLE cohort_votes;
+ALTER PUBLICATION supabase_realtime ADD TABLE cohort_state;
 
 -- ─── Storage buckets (create in Supabase Dashboard → Storage) ────────────────
 -- gallery  — public, 10 MB max per file
