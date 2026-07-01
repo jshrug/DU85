@@ -5,6 +5,7 @@ import { BrowserRouter } from "react-router-dom";
 import App from "./App.jsx";
 import { AuthProvider } from "./lib/AuthContext.jsx";
 import AuthGate from "./components/AuthGate.jsx";
+import ErrorBoundary from "./components/ErrorBoundary.jsx";
 
 window.addEventListener("vite:preloadError", () => {
   if (sessionStorage.getItem("preloadErrorReloaded") === "1") return;
@@ -18,11 +19,13 @@ window.addEventListener("load", () => {
 createRoot(document.getElementById("root")).render(
   <StrictMode>
     <BrowserRouter>
-      <AuthProvider>
-        <AuthGate>
-          <App />
-        </AuthGate>
-      </AuthProvider>
+      <ErrorBoundary>
+        <AuthProvider>
+          <AuthGate>
+            <App />
+          </AuthGate>
+        </AuthProvider>
+      </ErrorBoundary>
     </BrowserRouter>
   </StrictMode>
 );

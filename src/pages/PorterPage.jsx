@@ -22,6 +22,18 @@ import {
 } from "../utils/destinationIntel.js";
 import { previousCohortTrips } from "../data/previousCohortIntel.js";
 
+// Spreading a whole file's bytes into String.fromCharCode(...) blows the call
+// stack on any real-sized file — convert in chunks instead.
+function arrayBufferToBase64(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const chunkSize = 0x8000;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
 function PorterCSS() {
   return (
     <style>{`
@@ -165,7 +177,7 @@ export default function PorterPage() {
       setAttachment({ filename, type: "text", content: result.value });
     } else if (filename.endsWith(".pdf")) {
       const buf = await file.arrayBuffer();
-      const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+      const b64 = arrayBufferToBase64(buf);
       setAttachment({ filename, type: "pdf", content: b64 });
     }
   }
@@ -645,7 +657,7 @@ function CountryBriefTab({ briefs, onBriefSubmitted }) {
         if (!extracted) throw new Error("No text found in the document.");
       } else {
         // PDF: send to extraction endpoint
-        const b64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+        const b64 = arrayBufferToBase64(arrayBuffer);
         const res = await fetch("/api/extract-pdf", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
