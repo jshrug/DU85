@@ -19,6 +19,10 @@ export default defineConfig({
             return 'mammoth'
           }
 
+          if (id.includes('node_modules/react-pdf') || id.includes('node_modules/pdfjs-dist')) {
+            return 'pdf-viewer'
+          }
+
           if (id.includes('node_modules/firebase/')) {
             return 'firebase'
           }

@@ -246,9 +246,19 @@ CREATE TABLE IF NOT EXISTS porter_memory (
   country_name   TEXT NOT NULL,
   team_members   TEXT,
   content        TEXT NOT NULL,
+  file_name      TEXT,
+  file_type      TEXT,
+  storage_path   TEXT,
+  download_url   TEXT,
   submitted_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (cohort_id, memory_type, country_name)
 );
+
+-- Run if porter_memory already exists from before original-file support was added:
+-- ALTER TABLE porter_memory ADD COLUMN IF NOT EXISTS file_name TEXT;
+-- ALTER TABLE porter_memory ADD COLUMN IF NOT EXISTS file_type TEXT;
+-- ALTER TABLE porter_memory ADD COLUMN IF NOT EXISTS storage_path TEXT;
+-- ALTER TABLE porter_memory ADD COLUMN IF NOT EXISTS download_url TEXT;
 
 -- Porter persistent conversation history (one row per user)
 CREATE TABLE IF NOT EXISTS porter_conversations (
@@ -419,3 +429,4 @@ ALTER PUBLICATION supabase_realtime ADD TABLE cohort_state;
 -- ─── Storage buckets (create in Supabase Dashboard → Storage) ────────────────
 -- gallery  — public, 10 MB max per file
 -- user-files — private, 10 MB max per file
+-- porter-briefs — public, 10 MB max per file (original .docx/.pdf brief uploads)

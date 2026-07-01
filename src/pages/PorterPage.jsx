@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -21,6 +21,8 @@ import {
   getRecentCohortDestinations,
 } from "../utils/destinationIntel.js";
 import { previousCohortTrips } from "../data/previousCohortIntel.js";
+
+const PdfViewerModal = lazy(() => import("../components/features/PdfViewerModal.jsx"));
 
 // FileReader's own base64 encoding has no JS-level argument/stack limit,
 // unlike building the string manually via String.fromCharCode.
@@ -633,6 +635,8 @@ function CountryBriefTab({ briefs, onBriefSubmitted }) {
   const [focusedField, setFocusedField] = useState(null);
   const [parsing, setParsing] = useState(false);
   const [parsedFileName, setParsedFileName] = useState("");
+  const [attachedFile, setAttachedFile] = useState(null);
+  const [viewingBrief, setViewingBrief] = useState(null);
   const fileInputRef = useRef(null);
 
   async function handleFileUpload(e) {
@@ -668,6 +672,7 @@ function CountryBriefTab({ briefs, onBriefSubmitted }) {
       }
       setContent(extracted);
       setParsedFileName(file.name);
+      setAttachedFile(file);
     } catch (err) {
       setSubmitError(err.message || "Could not read the file.");
     } finally {
@@ -685,13 +690,15 @@ function CountryBriefTab({ briefs, onBriefSubmitted }) {
     setSubmitError("");
     setSubmitSuccess(false);
     try {
-      await submitCountryBrief({ countryName, teamMembers, content });
+      await submitCountryBrief({ countryName, teamMembers, content, file: attachedFile });
       const updated = await fetchCountryBriefs();
       onBriefSubmitted(updated);
       setSubmitSuccess(true);
       setCountryName("");
       setTeamMembers("");
       setContent("");
+      setParsedFileName("");
+      setAttachedFile(null);
     } catch (err) {
       setSubmitError(err.message || "Submission failed. Try again.");
     } finally {
@@ -895,10 +902,43 @@ function CountryBriefTab({ briefs, onBriefSubmitted }) {
                   </p>
                 )}
                 <p className="text-[12px] text-white/48 leading-[1.6] line-clamp-3">{b.content}</p>
+                {b.download_url && (
+                  <div className="mt-2.5">
+                    {b.file_type === "application/pdf" ? (
+                      <button
+                        onClick={() => setViewingBrief(b)}
+                        className="text-[9px] font-black uppercase tracking-[0.18em]"
+                        style={{ color: COLORS.champagne }}
+                      >
+                        View original PDF ↗
+                      </button>
+                    ) : (
+                      <a
+                        href={b.download_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[9px] font-black uppercase tracking-[0.18em]"
+                        style={{ color: COLORS.champagne }}
+                      >
+                        Download original file ({b.file_name}) ↗
+                      </a>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
           </div>
         </div>
+      )}
+
+      {viewingBrief && (
+        <Suspense fallback={null}>
+          <PdfViewerModal
+            url={viewingBrief.download_url}
+            filename={viewingBrief.file_name}
+            onClose={() => setViewingBrief(null)}
+          />
+        </Suspense>
       )}
 
       {briefs.length === 0 && (
