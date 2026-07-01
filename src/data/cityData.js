@@ -3,10 +3,10 @@ export const CITY_CHAMPIONS = {
   "Santiago":   null,
   "Seoul":      "Joseph, Jen",
   "Singapore":  "Chelsea",
-  "Istanbul":   "Joi",
+  "Istanbul":   "Joi, Oswaldo",
   "Lisbon":     "Adriel",
-  "Cape Town":  "Kelly",
-  "Nairobi":    "Kris, John, Hannah",
+  "Cape Town":  "Kelly, Harry, Ralf",
+  "Nairobi":    "Kris, John, Hannah, Mike",
   "Kigali":     "Bri, Dani",
 };
 
