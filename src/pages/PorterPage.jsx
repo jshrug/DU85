@@ -22,16 +22,15 @@ import {
 } from "../utils/destinationIntel.js";
 import { previousCohortTrips } from "../data/previousCohortIntel.js";
 
-// Spreading a whole file's bytes into String.fromCharCode(...) blows the call
-// stack on any real-sized file — convert in chunks instead.
-function arrayBufferToBase64(buffer) {
-  const bytes = new Uint8Array(buffer);
-  const chunkSize = 0x8000;
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-  return btoa(binary);
+// FileReader's own base64 encoding has no JS-level argument/stack limit,
+// unlike building the string manually via String.fromCharCode.
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.slice(reader.result.indexOf(",") + 1));
+    reader.onerror = () => reject(reader.error || new Error("Could not read the file."));
+    reader.readAsDataURL(file);
+  });
 }
 
 function PorterCSS() {
@@ -176,8 +175,7 @@ export default function PorterPage() {
       const result = await mammoth.extractRawText({ arrayBuffer: buf });
       setAttachment({ filename, type: "text", content: result.value });
     } else if (filename.endsWith(".pdf")) {
-      const buf = await file.arrayBuffer();
-      const b64 = arrayBufferToBase64(buf);
+      const b64 = await fileToBase64(file);
       setAttachment({ filename, type: "pdf", content: b64 });
     }
   }
@@ -649,15 +647,15 @@ function CountryBriefTab({ briefs, onBriefSubmitted }) {
     setParsing(true);
     setSubmitError("");
     try {
-      const arrayBuffer = await file.arrayBuffer();
       let extracted = "";
       if (isDocx) {
+        const arrayBuffer = await file.arrayBuffer();
         const result = await mammoth.extractRawText({ arrayBuffer });
         extracted = result.value.trim();
         if (!extracted) throw new Error("No text found in the document.");
       } else {
         // PDF: send to extraction endpoint
-        const b64 = arrayBufferToBase64(arrayBuffer);
+        const b64 = await fileToBase64(file);
         const res = await fetch("/api/extract-pdf", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
