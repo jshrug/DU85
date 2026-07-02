@@ -21,6 +21,7 @@ export const DEPARTURE_DATE = new Date("2027-05-23T00:00:00");
 export const DRAWER_NAV = [
   { to: "/", label: "Command Center", icon: "✦", desc: "Today, alerts, and quick actions" },
   { to: "/porter", label: "Porter", icon: "🛎️", desc: "AI cohort concierge" },
+  { to: "/porter?tab=brief", label: "Briefs", icon: "📋", desc: "Submit your city brief or see what's in" },
   { to: "/events", label: "Schedule", icon: "📅", desc: "Key dates, deadlines, and planning calendar" },
   { to: "/city-events", label: "City Events", icon: "🎯", desc: "Events, activities, and RSVPs by city" },
   { to: "/votes", label: "Votes", icon: "🗳️", desc: "Destination chamber and trip decisions" },

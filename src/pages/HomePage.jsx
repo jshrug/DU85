@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { COLORS, COHORT_SIZE, TRIP_DATE } from "../constants.js";
 import { COHORT_EVENTS } from "../data/cityData.js";
 import { timeUntilDeparture, getCountryByName, countryIcon } from "../utils/voteUtils.js";
@@ -218,6 +218,17 @@ export default function HomePage({ onAsk }) {
                 )}
               </button>
             </div>
+
+            <div className="mt-3.5 flex justify-center">
+              <Link
+                to="/porter?tab=brief"
+                className="inline-flex items-center gap-1.5 text-[11px] uppercase tracking-[0.18em] font-bold text-white/45 transition-colors hover:text-white/75"
+              >
+                <span aria-hidden>📝</span>
+                Submit your brief
+                <span aria-hidden className="text-white/30">›</span>
+              </Link>
+            </div>
           </div>
         </section>
 
@@ -349,6 +360,17 @@ function KeyDatesCalendar({ open, onClose, events }) {
                   </span>
                 </div>
                 <p className="mt-2 text-sm text-white/60 leading-6">{ev.detail}</p>
+                {ev.source === "Assignment Due" && (
+                  <Link
+                    to="/porter?tab=brief"
+                    onClick={onClose}
+                    className="mt-3 inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-[11px] uppercase tracking-[0.16em] font-black transition-colors active:scale-[0.98]"
+                    style={{ background: "rgba(243,213,138,0.12)", color: COLORS.champagneLight, borderColor: "rgba(243,213,138,0.22)" }}
+                  >
+                    Submit / see briefs
+                    <span aria-hidden>›</span>
+                  </Link>
+                )}
               </div>
             ))}
           </div>
@@ -411,6 +433,16 @@ function SmallEventCard({ event, today }) {
             <p className="text-xs mt-2 font-black" style={{ color: daysAway === 0 ? COLORS.champagneLight : "rgba(255,255,255,0.32)" }}>
               {daysAway === 0 ? "Today" : daysAway > 0 ? `In ${daysAway} day${daysAway !== 1 ? "s" : ""}` : "Past"}
             </p>
+          )}
+          {event.source === "Assignment Due" && (
+            <Link
+              to="/porter?tab=brief"
+              className="mt-3 inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-[11px] uppercase tracking-[0.16em] font-black transition-colors active:scale-[0.98]"
+              style={{ background: "rgba(243,213,138,0.12)", color: COLORS.champagneLight, borderColor: "rgba(243,213,138,0.22)" }}
+            >
+              Submit / see briefs
+              <span aria-hidden>›</span>
+            </Link>
           )}
         </div>
       </div>

@@ -245,6 +245,7 @@ export function BottomNav() {
       <div className="max-w-7xl mx-auto flex">
         <TabLink to="/" label="Home" icon="✦" />
         <TabLink to="/porter" label="Porter" icon="🛎️" />
+        <TabLink to="/porter?tab=brief" label="Briefs" icon="📋" />
         <TabLink to="/champions" label="Champions" icon="🏙️" />
         <TabLink to="/events" label="Plan" icon="📅" />
         <TabLink to="/votes" label="Votes" icon="🗳️" pulse={votingOpen} />

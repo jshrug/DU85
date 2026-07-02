@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo, lazy, Suspense } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import mammoth from "mammoth";
@@ -144,7 +144,13 @@ export default function PorterPage() {
   const inputRef = useRef(null);
   const fileInputRef = useRef(null);
   const userId = useMemo(() => getOrCreateUserId(), []);
-  const [tab, setTab] = useState("chat");
+  const [searchParams] = useSearchParams();
+  const countryParam = searchParams.get("country") || "";
+  const viewParam = searchParams.get("view") || "";
+  // Deep-link: ?tab=brief (or any brief-scoped param) opens directly on the Briefs tab.
+  const wantsBrief =
+    searchParams.get("tab") === "brief" || Boolean(countryParam) || Boolean(viewParam);
+  const [tab, setTab] = useState(wantsBrief ? "brief" : "chat");
   const [messages, setMessages] = useState([PORTER_INITIAL_MESSAGE]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -355,7 +361,7 @@ export default function PorterPage() {
           className="flex rounded-2xl p-1"
           style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}
         >
-          {[["chat", "Briefing Room"], ["brief", "Brief"]].map(([key, label]) => (
+          {[["chat", "Ask Porter"], ["brief", "Briefs"]].map(([key, label]) => (
             <button
               key={key}
               onClick={() => setTab(key)}
@@ -602,6 +608,9 @@ export default function PorterPage() {
         <CountryBriefTab
           briefs={briefs}
           onBriefSubmitted={(updated) => setBriefs(updated)}
+          prefillCountry={countryParam}
+          prefillTeam={countryParam ? (CITY_CHAMPIONS[countryParam] || "") : ""}
+          viewCountry={viewParam}
         />
       )}
     </main>
@@ -625,7 +634,7 @@ function BriefField({ label, children }) {
   );
 }
 
-function CountryBriefTab({ briefs, onBriefSubmitted }) {
+function CountryBriefTab({ briefs, onBriefSubmitted, prefillCountry = "", prefillTeam = "", viewCountry = "" }) {
   const [countryName, setCountryName] = useState("");
   const [teamMembers, setTeamMembers] = useState("");
   const [content, setContent] = useState("");
@@ -637,7 +646,39 @@ function CountryBriefTab({ briefs, onBriefSubmitted }) {
   const [parsedFileName, setParsedFileName] = useState("");
   const [attachedFile, setAttachedFile] = useState(null);
   const [viewingBrief, setViewingBrief] = useState(null);
+  const [highlightId, setHighlightId] = useState(null);
   const fileInputRef = useRef(null);
+  const formRef = useRef(null);
+  const cardRefs = useRef({});
+  const prefilledRef = useRef(false);
+  const viewedRef = useRef(false);
+
+  // Prefill the submit form from ?country=NAME, once, so we never clobber typing.
+  useEffect(() => {
+    if (prefilledRef.current || !prefillCountry) return;
+    prefilledRef.current = true;
+    setCountryName(prefillCountry);
+    if (prefillTeam) setTeamMembers(prefillTeam);
+    requestAnimationFrame(() => {
+      formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [prefillCountry, prefillTeam]);
+
+  // View an existing brief from ?view=NAME: scroll to it and briefly highlight, once.
+  useEffect(() => {
+    if (viewedRef.current || !viewCountry || briefs.length === 0) return;
+    const target = briefs.find(
+      (b) => (b.country_name || "").toLowerCase() === viewCountry.toLowerCase()
+    );
+    if (!target) return;
+    viewedRef.current = true;
+    const el = cardRefs.current[target.id];
+    if (!el) return;
+    requestAnimationFrame(() => el.scrollIntoView({ behavior: "smooth", block: "center" }));
+    setHighlightId(target.id);
+    const t = setTimeout(() => setHighlightId(null), 2000);
+    return () => clearTimeout(t);
+  }, [viewCountry, briefs]);
 
   async function handleFileUpload(e) {
     const file = e.target.files?.[0];
@@ -725,6 +766,7 @@ function CountryBriefTab({ briefs, onBriefSubmitted }) {
     <div className="px-5 flex flex-col gap-4">
       {/* Brief form */}
       <div
+        ref={formRef}
         className="relative rounded-[1.8rem] overflow-hidden"
         style={{ background: "rgba(4,3,1,0.68)", border: "1px solid rgba(196,150,42,0.16)" }}
       >
@@ -869,17 +911,22 @@ function CountryBriefTab({ briefs, onBriefSubmitted }) {
             className="text-[8px] uppercase tracking-[0.32em] font-black mb-3 ml-1"
             style={{ color: "rgba(196,150,42,0.44)" }}
           >
-            Porter's Memory — {briefs.length} Brief{briefs.length !== 1 ? "s" : ""} Loaded
+            Submitted Briefs ({briefs.length}) · Porter's Memory
           </p>
           <div className="flex flex-col gap-2">
             {briefs.map((b, i) => (
               <div
                 key={b.id}
+                ref={(el) => { if (el) cardRefs.current[b.id] = el; }}
                 className="rounded-2xl p-4"
                 style={{
                   background: "rgba(255,255,255,0.024)",
                   border: "1px solid rgba(196,150,42,0.12)",
                   borderLeft: "3px solid rgba(196,150,42,0.44)",
+                  boxShadow: highlightId === b.id
+                    ? `0 0 0 2px ${COLORS.gold}, 0 0 24px rgba(196,150,42,0.45)`
+                    : "none",
+                  transition: "box-shadow 0.6s ease",
                 }}
               >
                 <div className="flex items-center justify-between gap-3 mb-1.5">
@@ -946,7 +993,18 @@ function CountryBriefTab({ briefs, onBriefSubmitted }) {
           className="rounded-2xl p-5 text-center"
           style={{ background: "rgba(255,255,255,0.022)", border: "1px solid rgba(255,255,255,0.06)" }}
         >
-          <p className="text-[11px] text-white/28 uppercase tracking-[0.18em]">No briefs on file — teams have until July 8</p>
+          <p
+            className="text-[9px] uppercase tracking-[0.32em] font-black mb-1.5"
+            style={{ color: "rgba(196,150,42,0.44)" }}
+          >
+            Submitted Briefs (0)
+          </p>
+          <p className="text-[12px] text-white/44 leading-[1.6]">
+            No briefs yet. Yours could be the first. Fill out the form above to send Porter your city intel.
+          </p>
+          <p className="text-[10px] text-white/28 uppercase tracking-[0.18em] mt-2">
+            Teams have until July 8.
+          </p>
         </div>
       )}
     </div>

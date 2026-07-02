@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { COLORS } from "../constants.js";
 import { COHORT_EVENTS } from "../data/cityData.js";
 import SectionTitle from "../components/SectionTitle.jsx";
@@ -97,6 +98,17 @@ function EventDetailSheet({ events, onClose }) {
                 </span>
               </div>
               <p className="mt-2 text-sm text-white/60 leading-6">{ev.detail}</p>
+              {ev.source === "Assignment Due" && (
+                <Link
+                  to="/porter?tab=brief"
+                  onClick={onClose}
+                  className="mt-3 inline-flex items-center gap-2 rounded-full border px-3.5 py-1.5 text-[11px] uppercase tracking-[0.16em] font-black transition-colors active:scale-[0.98]"
+                  style={{ background: "rgba(243,213,138,0.12)", color: COLORS.champagneLight, borderColor: "rgba(243,213,138,0.22)" }}
+                >
+                  Submit / see briefs
+                  <span aria-hidden>›</span>
+                </Link>
+              )}
             </div>
           ))}
         </div>

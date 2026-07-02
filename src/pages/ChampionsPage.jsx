@@ -1,12 +1,38 @@
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { COLORS } from "../constants.js";
 import { CITY_CHAMPIONS, ANCHOR_COUNTRIES, CITY_B_MAP } from "../data/cityData.js";
 import { countryIcon } from "../utils/voteUtils.js";
+import { fetchCountryBriefs } from "../lib/porterMemory.js";
 import SectionTitle from "../components/SectionTitle.jsx";
 
 export default function ChampionsPage() {
   const cities = Object.keys(CITY_CHAMPIONS);
   const assigned = cities.filter((c) => CITY_CHAMPIONS[c]);
   const pending = cities.filter((c) => !CITY_CHAMPIONS[c]);
+
+  // Case-insensitive lookup of city names that already have a submitted brief.
+  const [briefedCities, setBriefedCities] = useState(() => new Set());
+
+  useEffect(() => {
+    let active = true;
+    fetchCountryBriefs()
+      .then((rows) => {
+        if (!active) return;
+        const set = new Set(
+          (rows || [])
+            .map((r) => (r?.country_name || "").trim().toLowerCase())
+            .filter(Boolean)
+        );
+        setBriefedCities(set);
+      })
+      .catch(() => {
+        if (active) setBriefedCities(new Set());
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <main className="px-5 py-5 pb-24">
@@ -31,11 +57,13 @@ export default function ChampionsPage() {
           const team = CITY_CHAMPIONS[cityName];
           const country = ANCHOR_COUNTRIES.find((c) => c.name === cityName);
           const cityBOptions = CITY_B_MAP[cityName] || [];
+          const hasBrief = briefedCities.has(cityName.trim().toLowerCase());
+          const encoded = encodeURIComponent(cityName);
 
           return (
             <div
               key={cityName}
-              className="rounded-[1.6rem] p-4 border"
+              className="group rounded-[1.6rem] p-4 border transition-all duration-200 hover:border-white/20 hover:-translate-y-0.5"
               style={{
                 background: team ? "rgba(196,150,42,0.06)" : "rgba(255,255,255,0.04)",
                 borderColor: team ? "rgba(196,150,42,0.22)" : "rgba(255,255,255,0.08)",
@@ -88,6 +116,36 @@ export default function ChampionsPage() {
                     </div>
                   )}
                 </div>
+              </div>
+
+              <div className="mt-3 pt-3 flex items-center gap-2" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                <Link
+                  to={`/porter?tab=brief&country=${encoded}`}
+                  className="flex-1 text-center text-[10px] uppercase tracking-[0.16em] font-black px-3 py-2 rounded-2xl transition-all duration-150 active:scale-[0.97]"
+                  style={{ background: "rgba(196,150,42,0.14)", color: COLORS.champagne, border: "1px solid rgba(196,150,42,0.28)" }}
+                  onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(196,150,42,0.24)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(196,150,42,0.14)"; }}
+                >
+                  Submit brief
+                </Link>
+                {hasBrief ? (
+                  <Link
+                    to={`/porter?tab=brief&view=${encoded}`}
+                    className="flex-1 text-center text-[10px] uppercase tracking-[0.16em] font-black px-3 py-2 rounded-2xl transition-all duration-150 active:scale-[0.97]"
+                    style={{ background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.82)", border: "1px solid rgba(255,255,255,0.14)" }}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.12)"; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,255,255,0.06)"; }}
+                  >
+                    See brief
+                  </Link>
+                ) : (
+                  <span
+                    className="flex-1 text-center text-[10px] uppercase tracking-[0.16em] font-black px-3 py-2 rounded-2xl select-none"
+                    style={{ background: "rgba(196,150,42,0.06)", color: "rgba(243,213,138,0.60)", border: "1px solid rgba(196,150,42,0.16)" }}
+                  >
+                    Brief coming soon ✨
+                  </span>
+                )}
               </div>
             </div>
           );
