@@ -430,3 +430,12 @@ ALTER PUBLICATION supabase_realtime ADD TABLE cohort_state;
 -- gallery  — public, 10 MB max per file
 -- user-files — private, 10 MB max per file
 -- porter-briefs — public, 10 MB max per file (original .docx/.pdf brief uploads)
+
+-- Storage buckets have RLS enabled on storage.objects with NO policies by
+-- default — marking a bucket "public" only allows anonymous reads via the
+-- /object/public/ URL, it does NOT allow uploads. Run this or uploads to
+-- porter-briefs fail with "new row violates row-level security policy":
+CREATE POLICY "porter_briefs_read" ON storage.objects FOR SELECT
+  USING (bucket_id = 'porter-briefs');
+CREATE POLICY "porter_briefs_insert" ON storage.objects FOR INSERT
+  WITH CHECK (bucket_id = 'porter-briefs' AND auth.uid() IS NOT NULL);
