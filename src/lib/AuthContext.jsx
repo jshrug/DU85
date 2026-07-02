@@ -12,15 +12,24 @@ export function AuthProvider({ children }) {
       return;
     }
 
+    let settled = false;
+    const finish = (u) => { settled = true; setUser(u); };
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
-      setUser(session?.user ?? null);
+      finish(session?.user ?? null);
     });
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-    });
+    // getSession reads the persisted session from local storage first, so a
+    // previously signed-in user still gets in even if the network is blocked.
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => finish(session?.user ?? null))
+      .catch(() => finish(null));
 
-    return () => subscription.unsubscribe();
+    // Fail-safe: if auth never answers (e.g. a school/corporate firewall stalls
+    // Supabase), never hang on the loading spinner. Fall through to the app.
+    const t = setTimeout(() => { if (!settled) setUser(null); }, 8000);
+
+    return () => { clearTimeout(t); subscription.unsubscribe(); };
   }, []);
 
   function signUp(email, password) {
