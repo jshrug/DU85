@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../lib/AuthContext";
 import { signOutUser } from "../lib/auth";
 import { subscribeMember, updateMyProfile } from "../lib/members";
@@ -59,7 +59,7 @@ export default function Me() {
   async function handleSave() {
     setErr("");
     setMsg("");
-    if (!user?.uid || !canSave) return;
+    if (!user?.id || !canSave) return;
 
     setSaving(true);
     try {

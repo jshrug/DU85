@@ -256,10 +256,29 @@ export function BottomNav() {
 }
 
 export function TabLink({ to, label, icon, pulse }) {
+  const location = useLocation();
+  const [toPath, toQuery = ""] = to.split("?");
+  const onBriefTab =
+    location.pathname === "/porter" &&
+    new URLSearchParams(location.search).get("tab") === "brief";
+
+  // NavLink ignores the query string, so /porter and /porter?tab=brief both match
+  // the same path. Resolve Porter vs Briefs off the ?tab= param, and match Home exactly.
+  let isActive;
+  if (toPath === "/porter") {
+    isActive =
+      location.pathname === "/porter" &&
+      (toQuery.includes("tab=brief") ? onBriefTab : !onBriefTab);
+  } else if (toPath === "/") {
+    isActive = location.pathname === "/";
+  } else {
+    isActive = location.pathname === toPath;
+  }
+
   return (
     <NavLink
       to={to}
-      className={({ isActive }) =>
+      className={
         "flex-1 flex flex-col items-center justify-center py-2 gap-0.5 transition " +
         (isActive ? "text-amber-200" : "text-white/45 hover:text-white/80")
       }
