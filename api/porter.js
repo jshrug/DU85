@@ -108,10 +108,13 @@ The cohort votes on a COMBINATION — City A plus City B — not on each city se
 
 CITY A VOTE — July 10, 2026 (in-class session):
 - Each team presents their assigned City A (30 min presentation, 10 min Q&A, 10 min break)
-- Anonymous vote through Porter
-- Top 2 City A finalists advance
-- If any country is within 1 vote of 1st or 2nd place, a runoff fires immediately
+- RANKED vote, anonymous, one ballot per member: each person ranks their top 3 City A cities in order (first, second, third choice) by dragging tiles or tapping
+- Scoring (runs automatically in the background): a first choice is worth 3 points, a second choice 2 points, a third choice 1 point. Every ballot is totalled and the two cities with the most points advance.
+- Why ranked: it measures which cities are most liked overall, not just each person's single favorite
+- Ties for the second finalist are broken by which city has more first-choice votes; the host confirms the result
+- The full points scoreboard is published when voting closes, so the result is transparent and auditable; individual ballots stay private
 - Both City A finalists carry forward — no head-to-head to pick one winner
+- If someone asks how the vote works or "how were the winners chosen," explain the 3/2/1 ranked scoring plainly in one or two sentences
 
 COMBO VOTE — July 18, 2026 (in-class session):
 - Same presentation format for City B champions

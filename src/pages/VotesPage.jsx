@@ -2,434 +2,193 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import Globe from "react-globe.gl";
 import * as THREE from "three";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { COLORS, COHORT_SIZE, TRIP_DATE } from "../constants.js";
-import { ANCHOR_COUNTRIES, COMPANION_CITIES, CITY_B_MAP } from "../data/cityData.js";
-import {
-  uniqueByName,
-  getCountryByName,
-  buildCompanionOptions,
-  getTopCountries,
-  withinN,
-  needsAnchorRunoff,
-  needsComboRunoff,
-  buildCombos,
-  countryIcon,
-  getInitialGlobeSize,
-  getTiedCitiesForPosition,
-  hasTieAtPosition,
-} from "../utils/voteUtils.js";
+import { COLORS, TRIP_DATE } from "../constants.js";
+import { ANCHOR_COUNTRIES, CITY_B_MAP } from "../data/cityData.js";
+import { getCountryByName, countryIcon, getInitialGlobeSize } from "../utils/voteUtils.js";
 import { useAuth } from "../lib/AuthContext.jsx";
-import { fetchCountryBriefs, submitCountryBrief } from "../lib/porterMemory.js";
-import { supabase, COHORT_ID, getOrCreateUserId } from "../lib/supabase.js";
+import { fetchCountryBriefs } from "../lib/porterMemory.js";
+import { supabase } from "../lib/supabase.js";
 import { DEEP_DIVE } from "../data/countryDeepDive.js";
 import {
   getFreshnessLabel,
   getCohortsForCity,
   getPreviousVisitOrgsForCity,
   getCohortBuiltConnectionRead,
-  getPrecedentScore,
   getMostRepeatedDestinations,
   getRecentCohortDestinations,
 } from "../utils/destinationIntel.js";
-import { previousCohortTrips } from "../data/previousCohortIntel.js";
+import {
+  fetchVoteStatus,
+  subscribeVoteStatus,
+  fetchMyBallot,
+  submitBallot,
+  fetchVotedCount,
+  setVoteStatus,
+  closeAndTally,
+} from "../lib/vote.js";
+
+// The 8 City A candidates come from ANCHOR_COUNTRIES — the same source the globe
+// uses to place its points, so the chamber keeps showing every candidate.
+const RANK_LABELS = ["First choice", "Second choice", "Third choice"];
+const CITIES = ANCHOR_COUNTRIES.map((c) => ({
+  name: c.name,
+  emoji: c.emoji || "🌐",
+  note: c.note || c.region || "",
+}));
+const cityByName = (n) => CITIES.find((c) => c.name === n);
+
+function useIsAdmin() {
+  const { user } = useAuth();
+  const [isAdmin, setIsAdmin] = useState(false);
+  useEffect(() => {
+    if (!user?.id || !supabase) {
+      setIsAdmin(false);
+      return;
+    }
+    supabase
+      .from("admins")
+      .select("enabled")
+      .eq("id", user.id)
+      .single()
+      .then(({ data }) => setIsAdmin(!!data?.enabled))
+      .catch(() => setIsAdmin(false));
+  }, [user?.id]);
+  return isAdmin;
+}
 
 export default function VotesPage() {
-  // Mission index 0-3:
-  // 0 = anchor-longlist, 1 = anchor-runoff (optional),
-  // 2 = combo-vote, 3 = combo-runoff (optional)
-  const [missionIndex, setMissionIndex] = useState(0);
-  const [allVoteCounts, setAllVoteCounts] = useState({});
-  const [myVotes, setMyVotes] = useState({});
-  const [anchorWinner, setAnchorWinner] = useState(null);
-  const [companionWinner, setCompanionWinner] = useState(null);
-  const [showCelebration, setShowCelebration] = useState(false);
+  const { user } = useAuth();
+  const voterId = user?.id || null;
+  const isAdmin = useIsAdmin();
+
+  const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState("closed"); // closed | open | final
+  const [results, setResults] = useState(null);
+  const [myBallot, setMyBallot] = useState(null);
+  const [votedCount, setVotedCount] = useState(0);
+  const [adminBusy, setAdminBusy] = useState(false);
   const [briefs, setBriefs] = useState([]);
-  const userId = useMemo(() => getOrCreateUserId(), []);
+  const [showCelebration, setShowCelebration] = useState(false);
+  const prevStatus = useRef(null);
 
   useEffect(() => {
     fetchCountryBriefs().then(setBriefs).catch(() => {});
   }, []);
 
-  const anchorVotes = allVoteCounts["anchor-longlist"] || {};
-  const anchorRunoffVotes = allVoteCounts["anchor-runoff"] || {};
-  const comboVotes = allVoteCounts["combo-vote"] || {};
-  const comboRunoffVotes = allVoteCounts["combo-runoff"] || {};
-
-  function parseVotes(rows) {
-    const counts = {};
-    const mine = {};
-    rows.forEach((v) => {
-      if (!counts[v.vote_phase]) counts[v.vote_phase] = {};
-      counts[v.vote_phase][v.country_name] = (counts[v.vote_phase][v.country_name] || 0) + 1;
-      if (v.user_id === userId) mine[v.vote_phase] = v.country_name;
-    });
-    return { counts, mine };
-  }
-
   useEffect(() => {
-    if (!supabase) return;
+    let active = true;
+    Promise.all([
+      fetchVoteStatus(),
+      voterId ? fetchMyBallot(voterId) : Promise.resolve(null),
+    ])
+      .then(([s, b]) => {
+        if (!active) return;
+        prevStatus.current = s.status || "closed";
+        setStatus(s.status || "closed");
+        setResults(s.results || null);
+        setMyBallot(b);
+        setLoading(false);
+      })
+      .catch(() => active && setLoading(false));
 
-    async function load() {
-      const [{ data: votes }, { data: state }] = await Promise.all([
-        supabase.from("cohort_votes").select("vote_phase,country_name,user_id").eq("cohort_id", COHORT_ID),
-        supabase.from("cohort_state").select("*").eq("cohort_id", COHORT_ID).maybeSingle(),
-      ]);
-
-      if (votes) {
-        const { counts, mine } = parseVotes(votes);
-        setAllVoteCounts(counts);
-        setMyVotes(mine);
+    const unsub = subscribeVoteStatus((row) => {
+      if (!row) return;
+      const next = row.status || "closed";
+      // Fire the celebration only on a live transition into "final", never on load.
+      if (next === "final" && prevStatus.current && prevStatus.current !== "final") {
+        setShowCelebration(true);
       }
-      if (state) {
-        setMissionIndex(state.mission_index ?? 0);
-        if (state.anchor_winner) setAnchorWinner(getCountryByName(state.anchor_winner));
-        if (state.companion_winner) {
-          const cw = getCountryByName(state.companion_winner);
-          if (cw) setCompanionWinner(cw);
-        }
-      }
-    }
-    load();
-
-    const channel = supabase
-      .channel(`cohort-${COHORT_ID}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "cohort_votes", filter: `cohort_id=eq.${COHORT_ID}` },
-        async () => {
-          const { data: votes } = await supabase
-            .from("cohort_votes")
-            .select("vote_phase,country_name,user_id")
-            .eq("cohort_id", COHORT_ID);
-          if (votes) {
-            const { counts, mine } = parseVotes(votes);
-            setAllVoteCounts(counts);
-            setMyVotes(mine);
-          }
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "cohort_state", filter: `cohort_id=eq.${COHORT_ID}` },
-        (payload) => {
-          const s = payload.new;
-          if (!s) return;
-          setMissionIndex(s.mission_index ?? 0);
-          if (s.anchor_winner) setAnchorWinner(getCountryByName(s.anchor_winner));
-          if (s.companion_winner) {
-            const cw = getCountryByName(s.companion_winner);
-            if (cw) {
-              setCompanionWinner(cw);
-              setShowCelebration(true);
-            }
-          }
-        }
-      )
-      .subscribe();
-
-    return () => supabase.removeChannel(channel);
-  }, [userId]);
-
-  async function pushStateToSupabase(patch) {
-    if (!supabase) return;
-    await supabase
-      .from("cohort_state")
-      .upsert({ cohort_id: COHORT_ID, ...patch, updated_at: new Date().toISOString() }, { onConflict: "cohort_id" });
-  }
-
-  function handleVote(country) {
-    const phase = activeMission?.mode;
-    if (!phase || activeMission.status !== "active") return;
-
-    const prevVote = myVotes[phase];
-    setMyVotes((prev) => ({ ...prev, [phase]: country.name }));
-    setAllVoteCounts((prev) => {
-      const pv = { ...(prev[phase] || {}) };
-      if (prevVote && pv[prevVote]) pv[prevVote] = Math.max(0, pv[prevVote] - 1);
-      pv[country.name] = (pv[country.name] || 0) + 1;
-      return { ...prev, [phase]: pv };
+      prevStatus.current = next;
+      setStatus(next);
+      setResults(row.results || null);
     });
+    return () => {
+      active = false;
+      unsub();
+    };
+  }, [voterId]);
 
-    if (supabase) {
-      supabase
-        .from("cohort_votes")
-        .upsert(
-          { cohort_id: COHORT_ID, vote_phase: phase, country_name: country.name, user_id: userId },
-          { onConflict: "cohort_id,vote_phase,user_id" }
-        )
-        .then(() => {});
-    }
+  // Anonymous live progress while open.
+  useEffect(() => {
+    if (status !== "open") return;
+    let active = true;
+    const tick = () => fetchVotedCount().then((n) => active && setVotedCount(n)).catch(() => {});
+    tick();
+    const id = setInterval(tick, 5000);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, [status]);
 
-  }
-
-  function startRunoff(longlistVotes, runoffPhase, nextMissionIndex) {
-    // Clear runoff votes and advance to runoff mission
-    setAllVoteCounts((prev) => {
-      const next = { ...prev };
-      delete next[runoffPhase];
-      return next;
-    });
-    setMyVotes((prev) => {
-      const next = { ...prev };
-      delete next[runoffPhase];
-      return next;
-    });
-    if (supabase) {
-      supabase.from("cohort_votes").delete().eq("cohort_id", COHORT_ID).eq("vote_phase", runoffPhase).then(() => {});
-    }
-    setMissionIndex(nextMissionIndex);
-    pushStateToSupabase({ mission_index: nextMissionIndex });
-  }
-
-  function handleMissionJump(index) {
-    if (index <= missionIndex) setMissionIndex(index);
-  }
-
-  function porterPick() {
-    const sorted = [...(activeMission?.options || [])].sort((a, b) => b.score - a.score);
-    if (sorted[0]) handleVote(sorted[0]);
-  }
-
-  function resetProtocol() {
-    setMissionIndex(0);
-    setAllVoteCounts({});
-    setMyVotes({});
-    setAnchorWinner(null);
-    setCompanionWinner(null);
-    setShowCelebration(false);
-    if (supabase) {
-      supabase.from("cohort_votes").delete().eq("cohort_id", COHORT_ID).then(() => {});
-      pushStateToSupabase({ mission_index: 0, anchor_winner: null, companion_winner: null });
-    }
-  }
-
-  // Compute anchor finalists — accounts for runoff results
-  const anchorFinalists = useMemo(() => {
-    if (missionIndex >= 2 && Object.keys(anchorRunoffVotes).length > 0) {
-      const sortedLonglist = Object.entries(anchorVotes).sort((a, b) => b[1] - a[1]);
-      const firstScore = sortedLonglist[0]?.[1];
-      const secondScore = sortedLonglist[1]?.[1];
-      const runoffWinner = Object.entries(anchorRunoffVotes).sort((a, b) => b[1] - a[1])[0]?.[0];
-      if (firstScore === secondScore) {
-        // Tie for 1st: runoff winner + the highest-scoring city not in the runoff
-        const runoffNames = sortedLonglist.filter(([, s]) => s === firstScore).map(([n]) => n);
-        const autoAdvance = sortedLonglist.find(([name]) => !runoffNames.includes(name))?.[0];
-        return uniqueByName([runoffWinner, autoAdvance].filter(Boolean).map(getCountryByName).filter(Boolean));
-      }
-      // Tie for 2nd: unchallenged longlist leader + runoff winner
-      return uniqueByName([sortedLonglist[0]?.[0], runoffWinner].filter(Boolean).map(getCountryByName).filter(Boolean));
-    }
-    return getTopCountries(ANCHOR_COUNTRIES, anchorVotes, 2);
-  }, [anchorVotes, anchorRunoffVotes, missionIndex]);
-
-  // Anchor runoff candidates — all cities within 1 vote of 1st or 2nd place
-  const anchorRunoffCandidates = useMemo(() => {
-    const entries = Object.entries(anchorVotes).sort((a, b) => b[1] - a[1]);
-    if (entries.length < 2) return entries.map(([name]) => getCountryByName(name)).filter(Boolean);
-    const firstScore = entries[0][1];
-    const secondScore = entries[1][1];
-    let candidates;
-    if (firstScore - secondScore <= 1) {
-      // Close at 1st: all within 1 of top score
-      candidates = entries.filter(([, s]) => s >= firstScore - 1).map(([n]) => n);
-    } else {
-      // 1st is clear; check if 2nd and 3rd are within 1
-      const thirdScore = entries[2]?.[1];
-      candidates = (thirdScore !== undefined && secondScore - thirdScore <= 1)
-        ? entries.slice(1).filter(([, s]) => s >= secondScore - 1).map(([n]) => n)
-        : entries.slice(0, 2).map(([n]) => n);
-    }
-    return candidates.map(getCountryByName).filter(Boolean);
-  }, [anchorVotes]);
-
-  // Combo options — all A+B pairs from the two anchor finalists' City B lists
-  const comboOptions = useMemo(() => buildCombos(anchorFinalists), [anchorFinalists]);
-
-  // Combo runoff candidates — top 2 combos from combo-vote
-  const comboRunoffCandidates = useMemo(() => {
-    const entries = Object.entries(comboVotes).sort((a, b) => b[1] - a[1]);
-    return entries.slice(0, 2).map(([name]) => comboOptions.find(c => c.name === name)).filter(Boolean);
-  }, [comboVotes, comboOptions]);
-
-  const missions = useMemo(
-    () => [
-      {
-        id: "anchor-longlist",
-        eyebrow: "Vote 01",
-        title: "Vote for City A",
-        shortTitle: "City A",
-        mode: "anchor-longlist",
-        status: missionIndex === 0 ? "active" : "complete",
-        instruction: "Pick the city that anchors Global 85. The two most-voted advance. If any city is within one vote of 1st or 2nd, a runoff fires on the spot. Both finalists carry forward.",
-        options: ANCHOR_COUNTRIES,
-        votes: anchorVotes,
-        selectedName: myVotes["anchor-longlist"],
-        voteLabel: "Cast Vote",
-        nextLabel: needsAnchorRunoff(anchorVotes) ? "Close — Start Runoff" : "Advance Top Two",
-        canAdvance: Object.keys(anchorVotes).length > 0,
-        finalistNames: anchorFinalists.map((c) => c.name),
-      },
-      {
-        id: "anchor-runoff",
-        eyebrow: "Runoff A",
-        title: "City A Tiebreaker",
-        shortTitle: "Runoff A",
-        mode: "anchor-runoff",
-        status: missionIndex < 1 ? "locked" : missionIndex === 1 ? "active" : "complete",
-        instruction: "Close race — one more vote to settle it. The winner secures a finalist spot alongside the clear leader.",
-        options: anchorRunoffCandidates.length ? anchorRunoffCandidates : ANCHOR_COUNTRIES.slice(0, 2),
-        votes: anchorRunoffVotes,
-        selectedName: myVotes["anchor-runoff"],
-        voteLabel: "Break the Tie",
-        nextLabel: "Lock Finalists",
-        canAdvance: Object.keys(anchorRunoffVotes).length > 0,
-        finalistNames: [],
-      },
-      {
-        id: "combo-vote",
-        eyebrow: "Vote 02",
-        title: "Vote for City A + City B",
-        shortTitle: "Combo Vote",
-        mode: "combo-vote",
-        status: missionIndex < 2 ? "locked" : missionIndex === 2 ? "active" : "complete",
-        instruction: "The two City A finalists each bring their City B options. Vote for the full combination you want. The winning combo locks both cities. If it's within two votes, a runoff decides.",
-        options: comboOptions,
-        votes: comboVotes,
-        selectedName: myVotes["combo-vote"],
-        voteLabel: "Vote for Combo",
-        nextLabel: needsComboRunoff(comboVotes) ? "Close — Start Runoff" : "Lock Destination",
-        canAdvance: Object.keys(comboVotes).length > 0,
-        finalistNames: [],
-      },
-      {
-        id: "combo-runoff",
-        eyebrow: "Final Runoff",
-        title: "Destination Tiebreaker",
-        shortTitle: "Final Runoff",
-        mode: "combo-runoff",
-        status: missionIndex < 3 ? "locked" : "active",
-        instruction: "Two combinations too close to call. One final vote locks the destination.",
-        options: comboRunoffCandidates.length ? comboRunoffCandidates : comboOptions.slice(0, 2),
-        votes: comboRunoffVotes,
-        selectedName: myVotes["combo-runoff"],
-        voteLabel: "Lock Destination",
-        nextLabel: "Lock Destination",
-        canAdvance: Object.keys(comboRunoffVotes).length > 0,
-        finalistNames: [],
-      },
-    ],
-    [
-      missionIndex, anchorVotes, anchorRunoffVotes, anchorFinalists, anchorRunoffCandidates,
-      comboOptions, comboVotes, comboRunoffVotes, comboRunoffCandidates, myVotes,
-    ]
+  const handleSubmit = useCallback(
+    async (ranking) => {
+      await submitBallot(voterId, ranking);
+      setMyBallot(ranking);
+      fetchVotedCount().then(setVotedCount).catch(() => {});
+    },
+    [voterId]
   );
 
-  const activeMission = missions[Math.min(missionIndex, missions.length - 1)];
-  const activeVoteCount = Object.values(activeMission?.votes || {}).reduce((s, n) => s + n, 0);
-
-  const handleAdvance = useCallback(async function handleAdvance() {
-    if (!activeMission?.canAdvance) return;
-
-    // 0: anchor-longlist → runoff (1) if within 1, else combo-vote (2)
-    if (missionIndex === 0) {
-      if (needsAnchorRunoff(anchorVotes)) {
-        startRunoff(anchorVotes, "anchor-runoff", 1);
-      } else {
-        setMissionIndex(2);
-        pushStateToSupabase({ mission_index: 2 });
-      }
-      return;
+  const adminAction = useCallback(async (fn) => {
+    setAdminBusy(true);
+    try {
+      await fn();
+    } catch (e) {
+      alert(e.message || "Something went wrong.");
+    } finally {
+      setAdminBusy(false);
     }
+  }, []);
 
-    // 1: anchor-runoff → combo-vote (2)
-    if (missionIndex === 1) {
-      setMissionIndex(2);
-      pushStateToSupabase({ mission_index: 2 });
-      return;
-    }
-
-    // 2: combo-vote → runoff (3) if within 2, else lock winner
-    if (missionIndex === 2) {
-      if (needsComboRunoff(comboVotes)) {
-        startRunoff(comboVotes, "combo-runoff", 3);
-      } else {
-        const topName = Object.entries(comboVotes).sort((a, b) => b[1] - a[1])[0]?.[0];
-        const winner = comboOptions.find(c => c.name === topName);
-        if (winner) {
-          setAnchorWinner(winner.cityA);
-          setCompanionWinner(winner.cityB);
-          setShowCelebration(true);
-          pushStateToSupabase({ anchor_winner: winner.cityA.name, companion_winner: winner.cityB.name });
-        }
-      }
-      return;
-    }
-
-    // 3: combo-runoff → lock destination
-    if (missionIndex === 3) {
-      const topName = Object.entries(comboRunoffVotes).sort((a, b) => b[1] - a[1])[0]?.[0];
-      const winner = comboOptions.find(c => c.name === topName) || comboRunoffCandidates.find(c => c.name === topName);
-      if (winner) {
-        setAnchorWinner(winner.cityA);
-        setCompanionWinner(winner.cityB);
-        setShowCelebration(true);
-        pushStateToSupabase({ anchor_winner: winner.cityA.name, companion_winner: winner.cityB.name });
-      }
-    }
-  }, [missionIndex, activeMission, anchorVotes, comboVotes, comboRunoffVotes, comboOptions, comboRunoffCandidates]);
-
-  // Auto-advance when all COHORT_SIZE votes are in. Runoff phases advance manually.
-  const autoAdvancedForPhase = useRef(null);
-  useEffect(() => {
-    const phase = activeMission?.mode;
-    if (!phase || !activeMission?.canAdvance) return;
-    if (phase === "anchor-runoff" || phase === "combo-runoff") return;
-    const voteCount = Object.values(activeMission.votes || {}).reduce((s, n) => s + n, 0);
-    if (voteCount >= COHORT_SIZE && autoAdvancedForPhase.current !== phase) {
-      autoAdvancedForPhase.current = phase;
-      handleAdvance();
-    }
-  }, [activeMission, handleAdvance]);
+  const finalists = useMemo(() => {
+    if (status !== "final" || !results?.top2) return [];
+    return results.top2.map(getCountryByName).filter(Boolean);
+  }, [status, results]);
 
   return (
     <main className="fixed inset-0 z-[999] overflow-hidden">
       <DestinationChamber
-        missions={missions}
-        missionIndex={missionIndex}
-        activeMission={activeMission}
-        activeVoteCount={activeVoteCount}
-        anchorWinner={anchorWinner}
-        companionWinner={companionWinner}
-        showCelebration={showCelebration}
-        onVote={handleVote}
-        onAdvance={handleAdvance}
-        onMissionJump={handleMissionJump}
-        onPorterPick={porterPick}
-        onReset={resetProtocol}
-        onDismissCelebration={() => setShowCelebration(false)}
+        loading={loading}
+        status={status}
+        results={results}
+        myBallot={myBallot}
+        votedCount={votedCount}
+        onSubmit={handleSubmit}
+        isAdmin={isAdmin}
+        adminBusy={adminBusy}
+        onOpen={() => adminAction(() => setVoteStatus("open"))}
+        onClose={() => adminAction(closeAndTally)}
+        onReopen={() => adminAction(() => setVoteStatus("open"))}
         briefs={briefs}
+        finalists={finalists}
+        showCelebration={showCelebration}
+        onDismissCelebration={() => setShowCelebration(false)}
       />
     </main>
   );
 }
 
+/* ══════════════════════════════════════════════════════════════════════════════
+   THE GLOBE CHAMBER — preserved wholesale from the original visual experience.
+   Only the interaction underneath (the toggling panel + globe data) is ranked now.
+   ══════════════════════════════════════════════════════════════════════════════ */
 function DestinationChamber({
-  missions,
-  missionIndex,
-  activeMission,
-  activeVoteCount,
-  anchorWinner,
-  companionWinner,
-  showCelebration,
-  onVote,
-  onAdvance,
-  onMissionJump,
-  onPorterPick,
-  onReset,
-  onDismissCelebration,
+  loading,
+  status,
+  results,
+  myBallot,
+  votedCount,
+  onSubmit,
+  isAdmin,
+  adminBusy,
+  onOpen,
+  onClose,
+  onReopen,
   briefs = [],
+  finalists = [],
+  showCelebration,
+  onDismissCelebration,
 }) {
   const navigate = useNavigate();
   const globeRef = useRef(null);
@@ -440,51 +199,54 @@ function DestinationChamber({
   const [pulseKey, setPulseKey] = useState(0);
   const [worldGeoData, setWorldGeoData] = useState({ features: [] });
   const [deepDiveCountry, setDeepDiveCountry] = useState(null);
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== "undefined" && window.innerWidth < 768
+  );
 
-  const countries = activeMission.options;
-  const selectedName = activeMission.selectedName;
-  const selected = selectedName === activeCountry?.name;
-  const routeComplete = Boolean(anchorWinner && companionWinner);
-  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 768);
+  // The 8 City A candidates — always shown on the globe.
+  const countries = ANCHOR_COUNTRIES;
+  const votingOpen = status === "open";
+  const winnerNames = useMemo(
+    () => (status === "final" && results?.top2 ? results.top2 : []),
+    [status, results]
+  );
 
+  // Lifted ballot state so both the ranked panel and the intel panel can add cities.
+  const [ranked, setRanked] = useState([]);
   useEffect(() => {
-    const selectedCountry = selectedName ? activeMission.options.find((country) => country.name === selectedName) : null;
-    setActiveCountry(selectedCountry || null);
-    firstPovRef.current = true;
-  }, [activeMission.id, activeMission.options, selectedName]);
+    if (myBallot && myBallot.length) setRanked(myBallot.slice(0, 3));
+  }, [myBallot]);
+  const addToBallot = useCallback(
+    (name) => setRanked((r) => (r.length >= 3 || r.includes(name) ? r : [...r, name])),
+    []
+  );
 
   useEffect(() => {
     let raf = null;
-
     function handleResize() {
       if (raf) cancelAnimationFrame(raf);
-
       raf = requestAnimationFrame(() => {
         const next = getInitialGlobeSize();
-        setGlobeSize((prev) => {
-          if (prev.width === next.width && prev.height === next.height) return prev;
-          return next;
-        });
+        setGlobeSize((prev) =>
+          prev.width === next.width && prev.height === next.height ? prev : next
+        );
         setIsMobile(window.innerWidth < 768);
       });
     }
-
     window.addEventListener("resize", handleResize);
-
     return () => {
       if (raf) cancelAnimationFrame(raf);
       window.removeEventListener("resize", handleResize);
     };
   }, []);
 
+  // Rotate the globe Group on its own Y axis so the floor stays stationary.
   useEffect(() => {
-    // Rotate the globe Group on its own Y axis so the floor stays stationary
     const startId = setTimeout(() => {
       const globe = globeRef.current;
       if (!globe) return;
       const scene = typeof globe.scene === "function" ? globe.scene() : null;
       if (!scene) return;
-
       const tick = () => {
         const grp = scene.children.find((c) => c.isGroup);
         if (grp) grp.rotation.y += 0.00028;
@@ -492,7 +254,6 @@ function DestinationChamber({
       };
       globeRotRafRef.current = requestAnimationFrame(tick);
     }, 500);
-
     return () => {
       clearTimeout(startId);
       if (globeRotRafRef.current) cancelAnimationFrame(globeRotRafRef.current);
@@ -500,23 +261,23 @@ function DestinationChamber({
   }, []);
 
   useEffect(() => {
-    fetch("https://raw.githubusercontent.com/vasturiano/react-globe.gl/master/example/datasets/ne_110m_admin_0_countries.geojson")
+    fetch(
+      "https://raw.githubusercontent.com/vasturiano/react-globe.gl/master/example/datasets/ne_110m_admin_0_countries.geojson"
+    )
       .then((r) => r.json())
       .then((data) => setWorldGeoData(data));
   }, []);
 
+  // Fly the camera to the country being explored.
   useEffect(() => {
     if (!globeRef.current || !activeCountry) return;
-
     const globe = globeRef.current;
     const duration = firstPovRef.current ? 0 : 520;
     firstPovRef.current = false;
-
     if (typeof globe.pointOfView === "function") {
       const scene = typeof globe.scene === "function" ? globe.scene() : null;
       const grp = scene?.children.find((c) => c.isGroup);
-      const rotOffsetDeg = grp ? (grp.rotation.y * 180 / Math.PI) : 0;
-
+      const rotOffsetDeg = grp ? (grp.rotation.y * 180) / Math.PI : 0;
       globe.pointOfView(
         {
           lat: activeCountry.lat,
@@ -528,10 +289,10 @@ function DestinationChamber({
     }
   }, [activeCountry, isMobile]);
 
+  // Globe material, chamber lights, and holographic floor — preserved as-is.
   useEffect(() => {
     const globe = globeRef.current;
     if (!globe) return;
-
     const frame = requestAnimationFrame(() => {
       const controls = typeof globe.controls === "function" ? globe.controls() : null;
       if (controls) {
@@ -564,20 +325,16 @@ function DestinationChamber({
           const crimsonKey = new THREE.PointLight("#D4A030", 3.2, 900);
           crimsonKey.position.set(0, 80, 240);
           scene.add(crimsonKey);
-
           const goldSide = new THREE.PointLight("#C4962A", 2.6, 900);
           goldSide.position.set(190, 70, 110);
           scene.add(goldSide);
-
           const champagneFill = new THREE.PointLight("#FFE8A3", 1.1, 700);
           champagneFill.position.set(-160, 40, 120);
           scene.add(champagneFill);
-
           scene.userData.porterHoloLightsAdded = true;
         }
 
         if (!scene.userData.holoFloorAdded) {
-          // Floor grid — 600-unit plane at Y=-140 (below globe radius 100)
           const grid = new THREE.GridHelper(600, 30, 0xe8b84b, 0xa07020);
           grid.position.y = -140;
           const applyGridOpacity = (m) => {
@@ -585,20 +342,16 @@ function DestinationChamber({
             m.opacity = 0.45;
             m.depthWrite = false;
           };
-          if (Array.isArray(grid.material)) {
-            grid.material.forEach(applyGridOpacity);
-          } else {
-            applyGridOpacity(grid.material);
-          }
+          if (Array.isArray(grid.material)) grid.material.forEach(applyGridOpacity);
+          else applyGridOpacity(grid.material);
           scene.add(grid);
 
-          // Subtle glow disc on the floor directly under the globe
           const disc = new THREE.Mesh(
             new THREE.CircleGeometry(90, 48),
             new THREE.MeshBasicMaterial({
               color: 0xc4962a,
               transparent: true,
-              opacity: 0.10,
+              opacity: 0.1,
               depthWrite: false,
               side: THREE.DoubleSide,
             })
@@ -607,7 +360,6 @@ function DestinationChamber({
           disc.position.y = -139;
           scene.add(disc);
 
-          // Beam cone from globe centre (Y=0) to floor (Y=-140)
           const beam = new THREE.Mesh(
             new THREE.CylinderGeometry(2, 55, 140, 24, 1, true),
             new THREE.MeshBasicMaterial({
@@ -621,11 +373,10 @@ function DestinationChamber({
           beam.position.y = -70;
           scene.add(beam);
 
-          // Concentric floor rings replacing FloorEmitter
           const ringDefs = [
-            { r: 28, color: 0xe8b84b, opacity: 0.70 },
+            { r: 28, color: 0xe8b84b, opacity: 0.7 },
             { r: 52, color: 0xba0c2f, opacity: 0.38 },
-            { r: 78, color: 0xc4962a, opacity: 0.30 },
+            { r: 78, color: 0xc4962a, opacity: 0.3 },
             { r: 106, color: 0xe8b84b, opacity: 0.22 },
             { r: 136, color: 0xba0c2f, opacity: 0.14 },
           ];
@@ -649,24 +400,36 @@ function DestinationChamber({
         }
       }
     });
-
     return () => cancelAnimationFrame(frame);
-  }, [activeMission.id]);
+  }, []);
 
   const points = useMemo(() => {
-    return countries.map((country) => ({
-      ...country,
-      size: country.name === activeCountry?.name ? 0.82 : 0.3,
-      color:
-        country.name === selectedName
+    return countries.map((country) => {
+      const isWinner = winnerNames.includes(country.name);
+      const isActive = country.name === activeCountry?.name;
+      const inBallot = ranked.includes(country.name);
+      return {
+        ...country,
+        size: isWinner ? 0.92 : isActive ? 0.82 : inBallot ? 0.5 : 0.3,
+        color: isWinner
           ? COLORS.champagneLight
-          : country.name === activeCountry?.name
+          : isActive
             ? COLORS.goldLight
-            : "rgba(255,200,175,0.80)",
-    }));
-  }, [activeCountry, countries, selectedName]);
+            : inBallot
+              ? COLORS.champagne
+              : "rgba(255,200,175,0.80)",
+      };
+    });
+  }, [activeCountry, countries, winnerNames, ranked]);
 
   const rings = useMemo(() => {
+    // Light the winning cities when the vote is final.
+    if (winnerNames.length) {
+      return winnerNames
+        .map(getCountryByName)
+        .filter(Boolean)
+        .map((c) => ({ ...c, maxR: 6.5, propagationSpeed: 1.3, repeatPeriod: 900 }));
+    }
     if (!activeCountry) {
       return countries.slice(0, 5).map((country) => ({
         ...country,
@@ -675,14 +438,8 @@ function DestinationChamber({
         repeatPeriod: 2450,
       }));
     }
-
     return [
-      {
-        ...activeCountry,
-        maxR: 7.4,
-        propagationSpeed: 1.5,
-        repeatPeriod: 820,
-      },
+      { ...activeCountry, maxR: 7.4, propagationSpeed: 1.5, repeatPeriod: 820 },
       ...countries
         .filter((country) => country.name !== activeCountry.name)
         .slice(0, 4)
@@ -693,27 +450,38 @@ function DestinationChamber({
           repeatPeriod: 2500,
         })),
     ];
-  }, [activeCountry, countries]);
+  }, [activeCountry, countries, winnerNames]);
 
   const arcs = useMemo(() => {
-    const mode = activeMission.mode;
-    const isAnchor = mode === "anchor-longlist" || mode === "anchor-runoff";
-    const isCombo = mode === "combo-vote" || mode === "combo-runoff";
-    if (isAnchor) {
-      const source = activeCountry;
-      if (!source) return [];
-      const bNames = CITY_B_MAP[source.name] || [];
-      return bNames
-        .map((name) => getCountryByName(name))
-        .filter(Boolean)
-        .map((bCity) => ({ startLat: source.lat, startLng: source.lng, endLat: bCity.lat, endLng: bCity.lng, label: bCity.name }));
+    // Final: arc between the two winning cities.
+    if (winnerNames.length === 2) {
+      const [a, b] = winnerNames.map(getCountryByName);
+      if (a && b)
+        return [
+          {
+            startLat: a.lat,
+            startLng: a.lng,
+            endLat: b.lat,
+            endLng: b.lng,
+            label: `${a.name} + ${b.name}`,
+          },
+        ];
     }
-    if (isCombo && activeCountry?.cityB) {
-      const combo = activeCountry;
-      return [{ startLat: combo.cityA.lat, startLng: combo.cityA.lng, endLat: combo.cityB.lat, endLng: combo.cityB.lng, label: combo.cityB.name }];
-    }
-    return [];
-  }, [activeCountry, activeMission, anchorWinner]);
+    // Exploring: arc the active city to its City B options.
+    const source = activeCountry;
+    if (!source) return [];
+    const bNames = CITY_B_MAP[source.name] || [];
+    return bNames
+      .map((name) => getCountryByName(name))
+      .filter(Boolean)
+      .map((bCity) => ({
+        startLat: source.lat,
+        startLng: source.lng,
+        endLat: bCity.lat,
+        endLng: bCity.lng,
+        label: bCity.name,
+      }));
+  }, [activeCountry, winnerNames]);
 
   const activeContinent = useMemo(() => {
     if (!activeCountry || !worldGeoData.features.length) return null;
@@ -725,9 +493,10 @@ function DestinationChamber({
   }, [activeCountry, worldGeoData.features]);
 
   const polygonCapColor = useCallback(
-    (d) => activeContinent && d.properties.CONTINENT === activeContinent
-      ? "rgba(196,150,42,0.07)"
-      : "rgba(0,0,0,0)",
+    (d) =>
+      activeContinent && d.properties.CONTINENT === activeContinent
+        ? "rgba(196,150,42,0.07)"
+        : "rgba(0,0,0,0)",
     [activeContinent]
   );
   const polygonSideColor = useCallback(() => "rgba(0,0,0,0)", []);
@@ -770,6 +539,33 @@ function DestinationChamber({
     }
   }
 
+  const votePanelProps = {
+    loading,
+    status,
+    results,
+    cities: CITIES,
+    ranked,
+    setRanked,
+    onSubmit,
+    votedCount,
+    submittedInitial: Boolean(myBallot && myBallot.length),
+    isAdmin,
+    adminBusy,
+    onOpen,
+    onClose,
+    onReopen,
+  };
+
+  const intelPanelProps = {
+    country: activeCountry,
+    ranked,
+    votingOpen,
+    onAddToBallot: addToBallot,
+    onBack: () => setActiveCountry(null),
+    onDeepDive: openDeepDive,
+    briefs,
+  };
+
   return (
     <section className="relative w-screen overflow-hidden text-white bg-[#080700]" style={{ height: "100dvh" }}>
       <ChamberCss />
@@ -788,40 +584,10 @@ function DestinationChamber({
         >
           Exit chamber
         </button>
-
-        <button
-          onClick={() => {
-            onReset();
-            setActiveCountry(null);
-            firstPovRef.current = true;
-            if (globeRef.current && typeof globeRef.current.pointOfView === "function") {
-              const scene = typeof globeRef.current.scene === "function" ? globeRef.current.scene() : null;
-              const grp = scene?.children.find((c) => c.isGroup);
-              const rotOffsetDeg = grp ? (grp.rotation.y * 180 / Math.PI) : 0;
-              globeRef.current.pointOfView({ lat: 20, lng: rotOffsetDeg, altitude: 2.5 }, 600);
-            }
-          }}
-          className="rounded-full px-4 py-2 text-[10px] sm:text-xs font-black border backdrop-blur-xl"
-          style={{
-            background: "rgba(8,4,14,0.48)",
-            borderColor: "rgba(255,255,255,0.10)",
-            color: "rgba(255,255,255,0.5)",
-          }}
-        >
-          Reset
-        </button>
       </div>
 
       <div className="absolute left-1/2 top-4 z-40 w-[min(88vw,600px)] -translate-x-1/2 sm:top-5">
-        <MissionHud
-          missions={missions}
-          missionIndex={missionIndex}
-          activeMission={activeMission}
-          activeVoteCount={activeVoteCount}
-          anchorWinner={anchorWinner}
-          companionWinner={companionWinner}
-          onMissionJump={onMissionJump}
-        />
+        <ChamberHud status={status} votedCount={votedCount} results={results} />
       </div>
 
       <div className="absolute inset-0 z-20">
@@ -851,7 +617,7 @@ function DestinationChamber({
             ringsData={rings}
             ringLat={(d) => d.lat}
             ringLng={(d) => d.lng}
-            ringColor={(d) => (d.name === selectedName ? COLORS.champagneLight : COLORS.gold)}
+            ringColor={(d) => (winnerNames.includes(d.name) ? COLORS.champagneLight : COLORS.gold)}
             ringMaxRadius={(d) => d.maxR}
             ringPropagationSpeed={(d) => d.propagationSpeed}
             ringRepeatPeriod={(d) => d.repeatPeriod}
@@ -875,7 +641,7 @@ function DestinationChamber({
             arcDashGap={0.2}
             arcDashAnimateTime={2200}
             atmosphereColor="#C4962A"
-            atmosphereAltitude={0.40}
+            atmosphereAltitude={0.4}
           />
         </div>
 
@@ -884,48 +650,33 @@ function DestinationChamber({
 
       {activeCountry && !isMobile && !deepDiveCountry && <ConnectorBeam />}
 
-      {/* ── DESKTOP (xl+): right-side intel panel ── */}
+      {/* ── DESKTOP (xl+): right-side panel toggles between country intel and the ballot ── */}
       {!deepDiveCountry && (
         <div className="absolute right-5 top-1/2 z-40 hidden w-[min(35vw,500px)] -translate-y-1/2 xl:block">
           {activeCountry ? (
-            <FloatingIntelPanel
-              mission={activeMission}
-              country={activeCountry}
-              selected={selected}
-              routeComplete={routeComplete}
-              anchorWinner={anchorWinner}
-              companionWinner={companionWinner}
-              onVote={() => activeCountry && onVote(activeCountry)}
-              onAdvance={onAdvance}
-              onDeepDive={openDeepDive}
-              briefs={briefs}
-            />
+            <FloatingIntelPanel {...intelPanelProps} />
           ) : (
-            <EmptyCountryPrompt activeMission={activeMission} />
+            <VotePanel {...votePanelProps} />
           )}
         </div>
       )}
 
       {/* ── DESKTOP (xl+): bottom-left route archive ── */}
-      {!deepDiveCountry && (
+      {!deepDiveCountry && !activeCountry && (
         <div className="absolute left-5 z-40 hidden xl:block w-[min(22vw,260px)]" style={{ bottom: "min(14vh,140px)" }}>
           <RouteArchive />
         </div>
       )}
 
-      {/* ── DESKTOP (xl+): bottom console ── */}
+      {/* ── DESKTOP (xl+): bottom console for exploring candidates on the globe ── */}
       {!deepDiveCountry && (
         <div className="absolute bottom-2 left-1/2 z-50 hidden w-[min(94vw,900px)] -translate-x-1/2 sm:bottom-3 xl:block">
           <DestinationConsole
             countries={countries}
             activeCountry={activeCountry}
-            selectedName={selectedName}
-            finalistNames={activeMission.status === "active" ? [] : activeMission.finalistNames}
+            winnerNames={winnerNames}
+            ranked={ranked}
             onSelectCountry={handlePointClick}
-            onPorterPick={onPorterPick}
-            onAdvance={onAdvance}
-            canAdvance={activeMission.canAdvance}
-            routeComplete={routeComplete}
             briefs={briefs}
           />
         </div>
@@ -938,57 +689,576 @@ function DestinationChamber({
           onTouchStart={(e) => e.stopPropagation()}
           onTouchMove={(e) => e.stopPropagation()}
         >
-          {activeCountry && (
-            <FloatingIntelPanel
-              mission={activeMission}
-              country={activeCountry}
-              selected={selected}
-              routeComplete={routeComplete}
-              anchorWinner={anchorWinner}
-              companionWinner={companionWinner}
-              onVote={() => activeCountry && onVote(activeCountry)}
-              onAdvance={onAdvance}
-              onDeepDive={openDeepDive}
-              briefs={briefs}
-              mobile
-            />
+          {activeCountry ? (
+            <FloatingIntelPanel {...intelPanelProps} mobile />
+          ) : (
+            <VotePanel {...votePanelProps} mobile />
           )}
           <DestinationConsole
             countries={countries}
             activeCountry={activeCountry}
-            selectedName={selectedName}
-            finalistNames={activeMission.status === "active" ? [] : activeMission.finalistNames}
+            winnerNames={winnerNames}
+            ranked={ranked}
             onSelectCountry={handlePointClick}
-            onPorterPick={onPorterPick}
-            onAdvance={onAdvance}
-            canAdvance={activeMission.canAdvance}
-            routeComplete={routeComplete}
             briefs={briefs}
           />
         </div>
       )}
 
-      {deepDiveCountry && (
-        <DeepDivePanel
-          country={deepDiveCountry}
-          mission={activeMission}
-          selected={deepDiveCountry.name === activeMission.selectedName}
-          onClose={closeDeepDive}
-          onVote={() => { onVote(deepDiveCountry); closeDeepDive(); }}
-        />
-      )}
+      {deepDiveCountry && <DeepDivePanel country={deepDiveCountry} onClose={closeDeepDive} />}
 
-      {showCelebration && anchorWinner && companionWinner && (
-        <DestinationLockedOverlay
-          anchorWinner={anchorWinner}
-          companionWinner={companionWinner}
-          onDismiss={onDismissCelebration}
-        />
+      {showCelebration && finalists.length === 2 && (
+        <FinalistsLockedOverlay finalists={finalists} onDismiss={onDismissCelebration} />
       )}
     </section>
   );
 }
 
+/* ── Chamber header: round title + live vote status ─────────────────────────── */
+function ChamberHud({ status, votedCount, results }) {
+  const pill =
+    status === "open"
+      ? { text: votedCount > 0 ? `Voting open · ${votedCount} in` : "Voting open", tone: "#E8B84B" }
+      : status === "final"
+        ? { text: `Closed · ${results?.ballotCount || 0} ballots`, tone: COLORS.champagneLight }
+        : { text: "Opens July 10", tone: "rgba(255,255,255,0.6)" };
+
+  return (
+    <div
+      className="rounded-[1.35rem] border px-3 py-2 backdrop-blur-2xl"
+      style={{
+        background:
+          "linear-gradient(135deg, rgba(14,3,4,0.62), rgba(10,2,3,0.40)), radial-gradient(circle at 16% 12%, rgba(196,150,42,0.12), transparent 34%)",
+        borderColor: "rgba(196,150,42,0.22)",
+        boxShadow: "0 0 35px rgba(196,150,42,0.08)",
+      }}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span
+              className="h-1.5 w-1.5 rounded-full"
+              style={{ background: pill.tone, boxShadow: `0 0 12px ${pill.tone}` }}
+            />
+            <p className="text-[9px] uppercase tracking-[0.28em] font-black" style={{ color: "#FFD880" }}>
+              Global 85 · City A
+            </p>
+          </div>
+          <h1 className="mt-1 truncate text-base font-black sm:text-xl" style={{ fontFamily: "Georgia, serif" }}>
+            Destination Vote
+          </h1>
+        </div>
+
+        <div
+          className="shrink-0 rounded-xl border px-3 py-1.5 text-center"
+          style={{ background: "rgba(0,0,0,0.22)", borderColor: `${pill.tone}55` }}
+        >
+          <p className="text-[8px] uppercase tracking-[0.18em] text-white/35 font-black">Status</p>
+          <p className="mt-0.5 text-[11px] font-black tabular-nums" style={{ color: pill.tone }}>
+            {pill.text}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── The ranked-vote interaction panel (the chamber's primary control surface) ── */
+function VotePanel({
+  loading,
+  status,
+  results,
+  cities,
+  ranked,
+  setRanked,
+  onSubmit,
+  votedCount,
+  submittedInitial,
+  isAdmin,
+  adminBusy,
+  onOpen,
+  onClose,
+  onReopen,
+  mobile = false,
+}) {
+  return (
+    <div
+      className={[
+        "relative overflow-hidden rounded-[1.7rem] sm:rounded-[2.1rem] border backdrop-blur-2xl chamber-scrollbar",
+        mobile
+          ? "mobile-panel-materialize max-h-[52vh] overflow-y-auto"
+          : "panel-materialize max-h-[min(calc(100vh-180px),720px)] overflow-y-auto",
+      ].join(" ")}
+      style={{
+        background:
+          "linear-gradient(135deg, rgba(14,3,4,0.80), rgba(10,2,3,0.68)), radial-gradient(circle at 10% 0%, rgba(196,150,42,0.18), transparent 34%)",
+        borderColor: "rgba(196,150,42,0.26)",
+        WebkitOverflowScrolling: "touch",
+        boxShadow:
+          "0 0 48px rgba(196,150,42,0.10), 0 30px 120px rgba(0,0,0,0.64), inset 0 0 42px rgba(196,150,42,0.04)",
+      }}
+    >
+      <CornerBrackets />
+      <div className="relative z-10 p-4 sm:p-5">
+        {loading ? (
+          <div className="py-14 text-center text-sm text-white/40">Loading the chamber…</div>
+        ) : status === "open" ? (
+          <RankBallot
+            cities={cities}
+            ranked={ranked}
+            setRanked={setRanked}
+            onSubmit={onSubmit}
+            votedCount={votedCount}
+            submittedInitial={submittedInitial}
+          />
+        ) : status === "final" && results ? (
+          <Results results={results} />
+        ) : (
+          <NotOpenYet />
+        )}
+
+        {isAdmin && (
+          <AdminBar
+            status={status}
+            busy={adminBusy}
+            onOpen={onOpen}
+            onClose={onClose}
+            onReopen={onReopen}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Ballot: rank your top 3 (tap to add, drag to reorder). Controlled ballot ── */
+function RankBallot({ cities, ranked, setRanked, onSubmit, votedCount, submittedInitial }) {
+  const [review, setReview] = useState(false);
+  const [submitted, setSubmitted] = useState(Boolean(submittedInitial));
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+  const [drag, setDrag] = useState(null); // { from, over }
+  const slotRefs = useRef([]);
+
+  useEffect(() => {
+    if (submittedInitial) setSubmitted(true);
+  }, [submittedInitial]);
+
+  const inRanked = (n) => ranked.includes(n);
+  const add = (n) => setRanked((r) => (r.length >= 3 || r.includes(n) ? r : [...r, n]));
+  const remove = (n) => setRanked((r) => r.filter((x) => x !== n));
+
+  const onMove = useCallback(
+    (e) => {
+      setDrag((d) => {
+        if (!d) return d;
+        let over = d.from;
+        slotRefs.current.forEach((el, i) => {
+          if (!el || ranked[i] === undefined) return;
+          const r = el.getBoundingClientRect();
+          if (e.clientY > r.top && e.clientY < r.bottom) over = i;
+        });
+        return { ...d, over };
+      });
+    },
+    [ranked]
+  );
+
+  const onUp = useCallback(() => {
+    setDrag((d) => {
+      if (d && d.over !== d.from && ranked[d.over] !== undefined) {
+        setRanked((r) => {
+          const c = [...r];
+          const [m] = c.splice(d.from, 1);
+          c.splice(d.over, 0, m);
+          return c;
+        });
+      }
+      return null;
+    });
+  }, [ranked, setRanked]);
+
+  useEffect(() => {
+    if (!drag) return;
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+  }, [drag, onMove, onUp]);
+
+  async function doSubmit() {
+    setSaving(true);
+    setErr("");
+    try {
+      await onSubmit(ranked);
+      setReview(false);
+      setSubmitted(true);
+    } catch (e) {
+      setErr(e.message || "Could not submit. Try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const need = 3 - ranked.length;
+
+  return (
+    <div>
+      {submitted && !review && (
+        <div
+          className="rounded-2xl px-4 py-3 mb-5 flex items-center gap-3"
+          style={{ background: "rgba(70,192,147,0.10)", border: "1px solid rgba(70,192,147,0.4)" }}
+        >
+          <span style={{ color: "#46c093" }}>✓</span>
+          <p className="text-[12px] font-bold text-white/80">Your vote is in. You can change it until voting closes.</p>
+        </div>
+      )}
+
+      <p className="text-sm text-white/55 leading-6 mb-4">
+        Drag your favorites into order, or tap to add them. First choice at the top. The two cities the cohort ranks highest advance.
+      </p>
+
+      <p className="text-[10px] uppercase tracking-[0.2em] font-black mb-2.5" style={{ color: "rgba(196,150,42,0.6)" }}>
+        Your ballot
+      </p>
+      <div className="flex flex-col gap-2.5 mb-6">
+        {[0, 1, 2].map((i) => {
+          const name = ranked[i];
+          const c = name ? cityByName(name) : null;
+          const isOver = drag && drag.over === i;
+          const isDragging = drag && drag.from === i;
+          return (
+            <div
+              key={i}
+              ref={(el) => (slotRefs.current[i] = el)}
+              className="flex items-center gap-3 rounded-2xl px-3 py-2.5 min-h-[60px] transition-all"
+              style={{
+                border: `1px ${c ? "solid" : "dashed"} ${isOver ? COLORS.gold : c ? "rgba(243,213,138,0.16)" : "rgba(243,213,138,0.22)"}`,
+                background: isOver ? "rgba(196,150,42,0.12)" : c ? "rgba(255,255,255,0.03)" : "rgba(255,255,255,0.015)",
+                opacity: isDragging ? 0.5 : 1,
+              }}
+            >
+              <div
+                className="w-9 h-9 rounded-xl grid place-items-center font-black shrink-0"
+                style={{
+                  fontFamily: "Georgia, serif",
+                  background: c ? `linear-gradient(150deg, ${COLORS.champagneLight}, ${COLORS.gold})` : "rgba(243,213,138,0.12)",
+                  color: c ? "#17060b" : "rgba(243,213,138,0.6)",
+                }}
+              >
+                {i + 1}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[8px] uppercase tracking-[0.16em] font-black" style={{ color: "rgba(255,255,255,0.35)" }}>
+                  {RANK_LABELS[i]}
+                </div>
+                {c ? (
+                  <div className="truncate">
+                    <span className="text-lg mr-1">{c.emoji}</span>
+                    <span className="font-bold text-white">{c.name}</span>
+                  </div>
+                ) : (
+                  <div className="text-sm text-white/30">Empty — tap a city below</div>
+                )}
+              </div>
+              {c && (
+                <>
+                  <span
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      setDrag({ from: i, over: i });
+                      e.currentTarget.setPointerCapture?.(e.pointerId);
+                    }}
+                    className="text-white/30 text-lg px-1 cursor-grab select-none"
+                    style={{ touchAction: "none" }}
+                    title="Drag to reorder"
+                  >
+                    ⋮⋮
+                  </span>
+                  <button
+                    onClick={() => remove(c.name)}
+                    className="w-6 h-6 rounded-full text-white/50 hover:text-white text-xs shrink-0"
+                    style={{ border: "1px solid rgba(255,255,255,0.12)", background: "rgba(255,255,255,0.04)" }}
+                  >
+                    ✕
+                  </button>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <p className="text-[10px] uppercase tracking-[0.2em] font-black mb-2.5" style={{ color: "rgba(196,150,42,0.6)" }}>
+        The candidates {need > 0 ? `· ${need} slot${need === 1 ? "" : "s"} open` : "· ballot full"}
+      </p>
+      <div className="grid grid-cols-2 gap-2.5">
+        {cities.map((c) => {
+          const picked = inRanked(c.name);
+          return (
+            <button
+              key={c.name}
+              onClick={() => add(c.name)}
+              disabled={picked || ranked.length >= 3}
+              className="flex items-center gap-2.5 rounded-xl px-3 py-3 text-left transition-all active:scale-[0.97]"
+              style={{
+                border: "1px solid rgba(255,255,255,0.08)",
+                background: "rgba(255,255,255,0.03)",
+                opacity: picked ? 0.32 : ranked.length >= 3 ? 0.5 : 1,
+                cursor: picked || ranked.length >= 3 ? "default" : "pointer",
+              }}
+            >
+              <span className="text-xl shrink-0">{c.emoji}</span>
+              <span className="min-w-0">
+                <span className="block text-[13px] font-bold text-white leading-tight truncate">{c.name}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {err && (
+        <p className="text-[12px] font-bold mt-4" style={{ color: "#fca5a5" }}>
+          {err}
+        </p>
+      )}
+
+      <button
+        onClick={() => setReview(true)}
+        disabled={ranked.length === 0}
+        className="w-full rounded-2xl py-4 mt-6 text-[11px] font-black uppercase tracking-[0.18em] transition-all disabled:opacity-40"
+        style={{
+          background: ranked.length
+            ? `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne}, ${COLORS.ember})`
+            : "rgba(255,255,255,0.06)",
+          color: ranked.length ? "#17060b" : "rgba(255,255,255,0.3)",
+        }}
+      >
+        {submitted ? "Update my ranking" : ranked.length ? `Lock in my top ${ranked.length}` : "Pick at least one city"}
+      </button>
+
+      <p className="text-center text-[10px] text-white/25 mt-3 uppercase tracking-[0.14em]">
+        {votedCount > 0 ? `${votedCount} vote${votedCount === 1 ? "" : "s"} in so far` : "Anonymous · one vote per person"}
+      </p>
+
+      {review && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+          <div className="absolute inset-0 bg-black/75 backdrop-blur-sm" onClick={() => setReview(false)} />
+          <div
+            className="relative z-10 w-full sm:max-w-md rounded-t-[2rem] sm:rounded-[2rem] p-6"
+            style={{ background: "rgba(12,10,16,0.99)", border: "1px solid rgba(243,213,138,0.16)" }}
+          >
+            <h2 className="text-2xl font-black mb-1" style={{ fontFamily: "Georgia, serif" }}>
+              Confirm your vote
+            </h2>
+            <p className="text-sm text-white/55 mb-4">This is what gets recorded. You can still edit it.</p>
+            <div className="mb-5">
+              {ranked.map((n, i) => {
+                const c = cityByName(n);
+                return (
+                  <div key={n} className="flex items-center gap-3 py-2.5 border-b border-white/10 last:border-0">
+                    <span className="text-[9px] uppercase tracking-[0.14em] font-black w-24" style={{ color: "rgba(196,150,42,0.6)" }}>
+                      {RANK_LABELS[i]}
+                    </span>
+                    <span className="text-lg">{c?.emoji}</span>
+                    <span className="font-bold text-white">{n}</span>
+                  </div>
+                );
+              })}
+            </div>
+            {err && (
+              <p className="text-[12px] font-bold mb-3" style={{ color: "#fca5a5" }}>
+                {err}
+              </p>
+            )}
+            <button
+              onClick={doSubmit}
+              disabled={saving}
+              className="w-full rounded-2xl py-4 text-[11px] font-black uppercase tracking-[0.18em] disabled:opacity-50"
+              style={{ background: `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne}, ${COLORS.ember})`, color: "#17060b" }}
+            >
+              {saving ? "Recording…" : "Submit my vote"}
+            </button>
+            <button
+              onClick={() => setReview(false)}
+              className="w-full rounded-2xl py-3 mt-2 text-[11px] font-black uppercase tracking-[0.16em] text-white/70"
+              style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}
+            >
+              Edit
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Not-open state (voting closed, no results yet) ──────────────────────────── */
+function NotOpenYet() {
+  return (
+    <div className="text-center py-4">
+      <div className="text-4xl mb-3">🗳️</div>
+      <h2 className="text-xl font-black mb-2" style={{ fontFamily: "Georgia, serif" }}>
+        Voting opens July 10
+      </h2>
+      <p className="text-sm text-white/55 leading-6">
+        The City A vote happens live in class. When it opens, you'll rank your top 3 cities right here. The two cities the cohort ranks highest advance. Explore the candidates on the globe while you wait.
+      </p>
+    </div>
+  );
+}
+
+/* ── Results: top 2 finalists + expandable 3/2/1 scoreboard ──────────────────── */
+function Results({ results }) {
+  const [showTally, setShowTally] = useState(false);
+  const top2 = results.top2 || [];
+  const ranked = results.ranked || [];
+  return (
+    <div>
+      <p className="text-center text-[10px] uppercase tracking-[0.3em] font-black mb-4" style={{ color: "rgba(70,192,147,0.7)" }}>
+        Voting closed · {results.ballotCount || 0} ballots
+      </p>
+      <p className="text-center text-sm text-white/55 mb-4">The two cities advancing to the next round:</p>
+      <div className="grid gap-3 mb-6">
+        {top2.map((name, i) => {
+          const c = cityByName(name);
+          const row = ranked.find((r) => r.city === name);
+          return (
+            <div
+              key={name}
+              className="flex items-center gap-4 rounded-2xl p-4"
+              style={{ background: "linear-gradient(150deg, rgba(196,150,42,0.14), rgba(0,0,0,0.2))", border: "1px solid rgba(243,213,138,0.3)" }}
+            >
+              <div className="text-3xl">{c?.emoji}</div>
+              <div className="flex-1">
+                <div className="text-[9px] uppercase tracking-[0.2em] font-black" style={{ color: "rgba(243,213,138,0.6)" }}>
+                  Finalist {i + 1}
+                </div>
+                <div className="text-lg font-black text-white">{name}</div>
+              </div>
+              {row && (
+                <div className="text-right">
+                  <div className="text-2xl font-black tabular-nums" style={{ color: COLORS.champagneLight }}>
+                    {row.points}
+                  </div>
+                  <div className="text-[8px] uppercase tracking-wide text-white/35">points</div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {results.tieForSecond && (
+        <p className="text-[11px] text-center mb-4 font-bold" style={{ color: COLORS.ember }}>
+          Note: the 2nd finalist was a tie on points and first-choice votes. The host will confirm the result.
+        </p>
+      )}
+
+      <button
+        onClick={() => setShowTally((s) => !s)}
+        className="w-full text-[10px] uppercase tracking-[0.18em] font-black text-white/45 py-2"
+      >
+        {showTally ? "Hide the full tally ▲" : "Show the full tally ▼"}
+      </button>
+      {showTally && (
+        <div className="rounded-2xl overflow-hidden mt-2" style={{ border: "1px solid rgba(255,255,255,0.08)" }}>
+          {ranked.map((r, i) => {
+            const c = cityByName(r.city);
+            return (
+              <div
+                key={r.city}
+                className="flex items-center gap-3 px-4 py-2.5"
+                style={{ background: i % 2 ? "rgba(255,255,255,0.02)" : "transparent", borderTop: i ? "1px solid rgba(255,255,255,0.05)" : "none" }}
+              >
+                <span className="text-[10px] tabular-nums text-white/35 w-4">{i + 1}</span>
+                <span className="text-base">{c?.emoji}</span>
+                <span className="flex-1 text-sm font-bold text-white/85">{r.city}</span>
+                <span className="text-sm font-black tabular-nums" style={{ color: COLORS.champagneLight }}>
+                  {r.points} pts
+                </span>
+              </div>
+            );
+          })}
+          <p className="text-[9px] text-white/30 px-4 py-2.5" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+            Scoring: 1st choice = 3 pts, 2nd = 2, 3rd = 1. Ties broken by most first-choice votes.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Admin controls (jshrug only) ────────────────────────────────────────────── */
+function AdminBar({ status, busy, onOpen, onClose, onReopen }) {
+  const [confirm, setConfirm] = useState(null); // 'open' | 'close' | 'reopen'
+  const act = { open: onOpen, close: onClose, reopen: onReopen }[confirm];
+  const copy = {
+    open: "Open voting for all 85 members?",
+    close: "Close voting and reveal the top 2? This tallies every ballot.",
+    reopen: "Reopen voting? This lets members change their ballots again.",
+  }[confirm];
+
+  return (
+    <div className="mt-8 rounded-2xl p-4" style={{ background: "rgba(198,90,46,0.06)", border: "1px solid rgba(198,90,46,0.24)" }}>
+      <p className="text-[9px] uppercase tracking-[0.24em] font-black mb-3" style={{ color: "rgba(232,120,60,0.7)" }}>
+        Host controls · admin only
+      </p>
+      <div className="flex gap-2 flex-wrap">
+        {status !== "open" && <AdminBtn label="Open voting" onClick={() => setConfirm("open")} disabled={busy} />}
+        {status === "open" && <AdminBtn label="Close & reveal top 2" onClick={() => setConfirm("close")} disabled={busy} primary />}
+        {status === "final" && <AdminBtn label="Reopen voting" onClick={() => setConfirm("reopen")} disabled={busy} />}
+      </div>
+      {confirm && (
+        <div className="mt-3 rounded-xl p-3" style={{ background: "rgba(0,0,0,0.3)", border: "1px solid rgba(255,255,255,0.1)" }}>
+          <p className="text-[12px] text-white/80 mb-2.5">{copy}</p>
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                act();
+                setConfirm(null);
+              }}
+              disabled={busy}
+              className="flex-1 rounded-lg py-2 text-[10px] font-black uppercase tracking-[0.14em]"
+              style={{ background: COLORS.ember, color: "#fff" }}
+            >
+              {busy ? "Working…" : "Confirm"}
+            </button>
+            <button
+              onClick={() => setConfirm(null)}
+              className="flex-1 rounded-lg py-2 text-[10px] font-black uppercase tracking-[0.14em] text-white/70"
+              style={{ background: "rgba(255,255,255,0.06)" }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+function AdminBtn({ label, onClick, disabled, primary }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="rounded-xl px-4 py-2.5 text-[10px] font-black uppercase tracking-[0.14em] disabled:opacity-40"
+      style={
+        primary
+          ? { background: `linear-gradient(135deg, ${COLORS.champagne}, ${COLORS.ember})`, color: "#16060a" }
+          : { background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.8)", border: "1px solid rgba(255,255,255,0.12)" }
+      }
+    >
+      {label}
+    </button>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Preserved chamber pieces below — room, glow, intel, deep dive, reticle, etc.
+   ══════════════════════════════════════════════════════════════════════════════ */
 function RouteArchive() {
   const [open, setOpen] = useState(false);
   const recentRoutes = getRecentCohortDestinations(5);
@@ -997,16 +1267,9 @@ function RouteArchive() {
   return (
     <div
       className="rounded-2xl border backdrop-blur-xl overflow-hidden"
-      style={{
-        background: "rgba(8,4,0,0.68)",
-        borderColor: "rgba(196,150,42,0.20)",
-        boxShadow: "0 0 24px rgba(0,0,0,0.48)",
-      }}
+      style={{ background: "rgba(8,4,0,0.68)", borderColor: "rgba(196,150,42,0.20)", boxShadow: "0 0 24px rgba(0,0,0,0.48)" }}
     >
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center justify-between px-4 py-2.5 text-left"
-      >
+      <button onClick={() => setOpen((v) => !v)} className="w-full flex items-center justify-between px-4 py-2.5 text-left">
         <span className="text-[9px] uppercase tracking-[0.26em] font-black" style={{ color: "rgba(243,213,138,0.62)" }}>
           Route archive
         </span>
@@ -1017,9 +1280,7 @@ function RouteArchive() {
 
       {!open && (
         <div className="px-4 pb-2.5">
-          <p className="text-[9px] text-white/32 leading-4">
-            Prior cohorts left a route history. Use it as signal.
-          </p>
+          <p className="text-[9px] text-white/32 leading-4">Prior cohorts left a route history. Use it as signal.</p>
         </div>
       )}
 
@@ -1035,9 +1296,7 @@ function RouteArchive() {
                   <span className="text-[8px] font-black w-6 shrink-0" style={{ color: "rgba(196,150,42,0.55)" }}>
                     {trip.cohort}
                   </span>
-                  <span className="text-[9px] text-white/45 truncate">
-                    {trip.destinations.join(" + ")}
-                  </span>
+                  <span className="text-[9px] text-white/45 truncate">{trip.destinations.join(" + ")}</span>
                 </div>
               ))}
             </div>
@@ -1051,11 +1310,7 @@ function RouteArchive() {
                 <span
                   key={city}
                   className="rounded-full px-2 py-0.5 text-[8px] font-bold"
-                  style={{
-                    background: "rgba(196,150,42,0.08)",
-                    border: "1px solid rgba(196,150,42,0.16)",
-                    color: "rgba(255,216,128,0.55)",
-                  }}
+                  style={{ background: "rgba(196,150,42,0.08)", border: "1px solid rgba(196,150,42,0.16)", color: "rgba(255,216,128,0.55)" }}
                 >
                   {city} ({count})
                 </span>
@@ -1071,35 +1326,20 @@ function RouteArchive() {
 function ChamberCss() {
   return (
     <style>{`
-      @keyframes chamberScan {
-        0% { transform: translateY(-120%); opacity: 0; }
-        12% { opacity: .38; }
-        55% { opacity: .14; }
-        100% { transform: translateY(120%); opacity: 0; }
-      }
-
       @keyframes panelMaterialize {
         0% { opacity: 0; transform: translateY(22px) translateX(16px) scale(.96); filter: blur(14px); }
         60% { opacity: .82; filter: blur(2px); }
         100% { opacity: 1; transform: translateY(0) translateX(0) scale(1); filter: blur(0); }
       }
-
       @keyframes mobilePanelMaterialize {
         0% { opacity: 0; transform: translateY(22px) scale(.98); filter: blur(12px); }
         100% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
       }
-
       @keyframes targetPing {
         0% { opacity: .9; transform: scale(.84); }
         70% { opacity: .18; transform: scale(1.2); }
         100% { opacity: 0; transform: scale(1.3); }
       }
-
-      @keyframes floorSpin {
-        from { transform: translate(-50%, -50%) rotate(0deg); }
-        to { transform: translate(-50%, -50%) rotate(360deg); }
-      }
-
       @keyframes holoFlicker {
         0%, 100% { opacity: .96; }
         7% { opacity: .78; }
@@ -1107,27 +1347,18 @@ function ChamberCss() {
         52% { opacity: .83; }
         54% { opacity: .98; }
       }
-
-      @keyframes gridPulse {
-        0%, 100% { opacity: .72; filter: brightness(1); }
-        50% { opacity: 1; filter: brightness(1.35); }
-      }
-
       @keyframes beamBreathe {
         0%, 100% { opacity: .48; transform: scaleX(.94); }
         50% { opacity: .92; transform: scaleX(1); }
       }
-
       @keyframes reflectionBreathe {
         0%, 100% { opacity: .48; transform: translateX(-50%) scaleY(-.38) scaleX(.96); }
         50% { opacity: .72; transform: translateX(-50%) scaleY(-.43) scaleX(1.02); }
       }
-
       @keyframes holoShell {
         0%, 100% { opacity: .34; transform: translate(-50%, -50%) scale(1); }
         50% { opacity: .54; transform: translate(-50%, -50%) scale(1.018); }
       }
-
       .holo-globe-shell::before {
         content: "";
         position: absolute;
@@ -1141,19 +1372,12 @@ function ChamberCss() {
         z-index: 5;
         will-change: transform, opacity;
         background:
-          repeating-linear-gradient(
-            0deg,
-            rgba(196,150,42,0.14) 0px,
-            rgba(196,150,42,0.14) 1px,
-            transparent 2px,
-            transparent 7px
-          ),
+          repeating-linear-gradient(0deg, rgba(196,150,42,0.14) 0px, rgba(196,150,42,0.14) 1px, transparent 2px, transparent 7px),
           radial-gradient(circle at 38% 32%, rgba(255,255,255,0.22), transparent 16%),
           radial-gradient(circle, transparent 45%, rgba(196,150,42,0.16) 57%, rgba(196,150,42,0.18) 70%, transparent 74%);
         mix-blend-mode: screen;
         animation: holoShell 3.6s ease-in-out infinite;
       }
-
       .holo-globe-shell::after {
         content: "";
         position: absolute;
@@ -1172,53 +1396,34 @@ function ChamberCss() {
           0 0 42px rgba(196,150,42,0.14),
           0 0 82px rgba(196,150,42,0.10);
       }
-
       .panel-materialize {
         animation: panelMaterialize 520ms cubic-bezier(.2,.9,.2,1) both, holoFlicker 7s ease-in-out infinite;
       }
-
       .mobile-panel-materialize {
         animation: mobilePanelMaterialize 420ms cubic-bezier(.2,.9,.2,1) both, holoFlicker 7s ease-in-out infinite;
       }
-
-      .chamber-scrollbar::-webkit-scrollbar {
-        width: 4px;
-        height: 4px;
-      }
-
-      .chamber-scrollbar::-webkit-scrollbar-thumb {
-        background: rgba(196,150,42,.48);
-        border-radius: 999px;
-      }
-
+      .chamber-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+      .chamber-scrollbar::-webkit-scrollbar-thumb { background: rgba(196,150,42,.48); border-radius: 999px; }
       @keyframes confettiFall {
         0% { transform: translateY(-20px) rotate(0deg); opacity: 1; }
         80% { opacity: 0.7; }
         100% { transform: translateY(110vh) rotate(720deg); opacity: 0; }
       }
-
       @keyframes deepDiveEnter {
         0% { opacity: 0; transform: translateY(32px); }
         100% { opacity: 1; transform: translateY(0); }
       }
-
       @keyframes celebrationEnter {
         0% { opacity: 0; transform: scale(0.94); }
         100% { opacity: 1; transform: scale(1); }
       }
-
-      .deep-dive-enter {
-        animation: deepDiveEnter 420ms cubic-bezier(.2,.9,.2,1) both;
-      }
-
-      .celebration-enter {
-        animation: celebrationEnter 500ms cubic-bezier(.2,.9,.2,1) both;
-      }
+      .deep-dive-enter { animation: deepDiveEnter 420ms cubic-bezier(.2,.9,.2,1) both; }
+      .celebration-enter { animation: celebrationEnter 500ms cubic-bezier(.2,.9,.2,1) both; }
     `}</style>
   );
 }
 
-function RoomBackground({ active }) {
+function RoomBackground() {
   return (
     <div className="pointer-events-none absolute inset-0 z-0 overflow-hidden bg-[#080700]">
       <div
@@ -1231,7 +1436,6 @@ function RoomBackground({ active }) {
             "linear-gradient(180deg, #100e01 0%, #080700 42%, #040400 100%)",
         }}
       />
-
       <div
         className="absolute left-1/2 top-[6vh] h-[60vh] w-[88vw] max-w-[1380px] -translate-x-1/2 rounded-t-[4rem] border"
         style={{
@@ -1240,25 +1444,20 @@ function RoomBackground({ active }) {
             "repeating-linear-gradient(90deg, rgba(196,150,42,0.09) 0px, rgba(196,150,42,0.09) 1px, transparent 1px, transparent 124px), " +
             "repeating-linear-gradient(0deg, rgba(196,150,42,0.07) 0px, rgba(196,150,42,0.07) 1px, transparent 1px, transparent 92px)",
           borderColor: "rgba(196,150,42,0.26)",
-          boxShadow:
-            "inset 0 0 120px rgba(196,150,42,0.06), inset 0 -80px 110px rgba(0,0,0,0.56), 0 0 130px rgba(0,0,0,0.86)",
+          boxShadow: "inset 0 0 120px rgba(196,150,42,0.06), inset 0 -80px 110px rgba(0,0,0,0.56), 0 0 130px rgba(0,0,0,0.86)",
         }}
       />
-
       <div
         className="absolute left-1/2 top-[7.5vh] h-[2px] w-[66vw] max-w-[960px] -translate-x-1/2 rounded-full"
         style={{
           background:
             "linear-gradient(90deg, transparent, rgba(196,150,42,0.52), rgba(196,150,42,0.78), rgba(243,213,138,0.62), rgba(196,150,42,0.52), transparent)",
-          boxShadow:
-            "0 0 18px rgba(196,150,42,0.42), 0 0 55px rgba(196,150,42,0.28)",
+          boxShadow: "0 0 18px rgba(196,150,42,0.42), 0 0 55px rgba(196,150,42,0.28)",
         }}
       />
-
       <div className="absolute left-1/2 top-[9vh] h-[26vh] w-[74vw] -translate-x-1/2 rounded-full bg-[#C4962A]/22 blur-[100px]" />
       <div className="absolute left-[25%] top-[22vh] h-[24vh] w-[38vw] rounded-full bg-[#F3D58A]/18 blur-[110px]" />
       <div className="absolute right-[15%] top-[24vh] h-[18vh] w-[34vw] rounded-full bg-[#C4962A]/12 blur-[110px]" />
-
       <div
         className="absolute left-[-7vw] top-[6vh] h-[76vh] w-[36vw] origin-right -skew-y-6 border-r"
         style={{
@@ -1269,7 +1468,6 @@ function RoomBackground({ active }) {
           boxShadow: "inset -50px 0 90px rgba(196,150,42,0.04)",
         }}
       />
-
       <div
         className="absolute right-[-7vw] top-[6vh] h-[76vh] w-[36vw] origin-left skew-y-6 border-l"
         style={{
@@ -1280,7 +1478,6 @@ function RoomBackground({ active }) {
           boxShadow: "inset 50px 0 90px rgba(196,150,42,0.04)",
         }}
       />
-
       <div
         className="absolute left-[8vw] top-[18vh] h-[44vh] w-px"
         style={{
@@ -1288,7 +1485,6 @@ function RoomBackground({ active }) {
           boxShadow: "0 0 18px rgba(196,150,42,0.48), 0 0 40px rgba(196,150,42,0.20)",
         }}
       />
-
       <div
         className="absolute right-[8vw] top-[18vh] h-[44vh] w-px"
         style={{
@@ -1296,9 +1492,7 @@ function RoomBackground({ active }) {
           boxShadow: "0 0 18px rgba(196,150,42,0.52), 0 0 40px rgba(196,150,42,0.18)",
         }}
       />
-
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_52%,transparent_0%,transparent_41%,rgba(0,0,0,0.72)_100%)]" />
-
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,transparent_0%,transparent_50%,rgba(0,0,0,0.88)_100%)]" />
     </div>
   );
@@ -1317,7 +1511,6 @@ function HoloGlobeGlow({ active }) {
           willChange: "opacity",
         }}
       />
-
       <div
         className="absolute left-1/2 top-[61%] z-[-1] h-[330px] w-[min(80vw,640px)] rounded-[100%] pointer-events-none"
         style={{
@@ -1329,7 +1522,6 @@ function HoloGlobeGlow({ active }) {
           willChange: "transform, opacity",
         }}
       />
-
       <div
         className="absolute left-1/2 top-[53%] h-[470px] w-[330px] -translate-x-1/2 pointer-events-none"
         style={{
@@ -1342,154 +1534,6 @@ function HoloGlobeGlow({ active }) {
         }}
       />
     </>
-  );
-}
-
-function MissionHud({
-  missions,
-  missionIndex,
-  activeMission,
-  activeVoteCount,
-  anchorWinner,
-  companionWinner,
-  onMissionJump,
-}) {
-  const isFinal = activeMission.mode === "combo-vote" || activeMission.mode === "combo-runoff";
-  const allVoted = activeVoteCount >= COHORT_SIZE;
-
-  return (
-    <div
-      className="rounded-[1.35rem] border px-3 py-2 backdrop-blur-2xl"
-      style={{
-        background:
-          "linear-gradient(135deg, rgba(14,3,4,0.62), rgba(10,2,3,0.40)), radial-gradient(circle at 16% 12%, rgba(196,150,42,0.12), transparent 34%)",
-        borderColor: allVoted && !isFinal ? "rgba(232,184,75,0.52)" : "rgba(196,150,42,0.22)",
-        boxShadow: allVoted && !isFinal
-          ? "0 0 28px rgba(232,184,75,0.22)"
-          : "0 0 35px rgba(196,150,42,0.08)",
-        transition: "border-color 0.4s, box-shadow 0.4s",
-      }}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span
-              className="h-1.5 w-1.5 rounded-full"
-              style={{
-                background: allVoted && !isFinal ? COLORS.champagneLight : "#E8B84B",
-                boxShadow: allVoted && !isFinal
-                  ? "0 0 12px rgba(243,213,138,1)"
-                  : "0 0 12px rgba(232,184,75,0.9)",
-              }}
-            />
-            <p className="text-[9px] uppercase tracking-[0.28em] font-black" style={{ color: "#FFD880" }}>
-              {activeMission.eyebrow}
-            </p>
-          </div>
-
-          <h1 className="mt-1 truncate text-base font-black sm:text-xl" style={{ fontFamily: "Georgia, serif" }}>
-            {activeMission.title}
-          </h1>
-        </div>
-
-        <div className="flex shrink-0 items-center gap-2">
-          {/* Live vote counter */}
-          {!isFinal && (
-            <div
-              className="rounded-xl border px-2.5 py-1.5 text-center"
-              style={{
-                background: allVoted ? "rgba(243,213,138,0.12)" : "rgba(0,0,0,0.22)",
-                borderColor: allVoted ? "rgba(243,213,138,0.36)" : "rgba(255,255,255,0.08)",
-              }}
-            >
-              <p className="text-[8px] uppercase tracking-[0.18em] text-white/35 font-black">Voted</p>
-              <p
-                className="mt-0.5 text-sm font-black tabular-nums"
-                style={{ color: allVoted ? COLORS.champagneLight : "rgba(255,255,255,0.72)" }}
-              >
-                {activeVoteCount}<span className="text-[10px] text-white/35">/{COHORT_SIZE}</span>
-              </p>
-            </div>
-          )}
-          <div className="hidden items-center gap-2 md:flex">
-            <HudLock label="A" value={anchorWinner?.name || "Pending"} active={Boolean(anchorWinner)} />
-            <HudLock label="B" value={companionWinner?.name || "Pending"} active={Boolean(companionWinner)} />
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-2 flex gap-1.5 overflow-x-auto pb-1 chamber-scrollbar">
-        {missions.map((mission, index) => {
-          const active = index === missionIndex;
-          const locked = index > missionIndex;
-
-          return (
-            <button
-              key={mission.id}
-              onClick={() => onMissionJump(index)}
-              disabled={locked}
-              className="shrink-0 rounded-full border px-2.5 py-1.5 text-[8px] font-black uppercase tracking-[0.14em]"
-              style={{
-                background: active
-                  ? `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne})`
-                  : locked
-                    ? "rgba(255,255,255,0.025)"
-                    : "rgba(196,150,42,0.10)",
-                color: active ? COLORS.midnight : locked ? "rgba(255,255,255,0.24)" : "#FFD880",
-                borderColor: active ? "transparent" : locked ? "rgba(255,255,255,0.07)" : "rgba(196,150,42,0.22)",
-              }}
-            >
-              {mission.eyebrow.replace("Vote ", "V")}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-function HudLock({ label, value, active }) {
-  return (
-    <div
-      className="rounded-2xl border px-2.5 py-1.5 text-right"
-      style={{
-        background: active ? "rgba(243,213,138,0.10)" : "rgba(0,0,0,0.20)",
-        borderColor: active ? "rgba(243,213,138,0.22)" : "rgba(255,255,255,0.08)",
-      }}
-    >
-      <p className="text-[8px] uppercase tracking-[0.18em] text-white/35 font-black">Country {label}</p>
-      <p className="mt-0.5 max-w-[92px] truncate text-xs font-black" style={{ color: active ? COLORS.champagneLight : "rgba(255,255,255,0.46)" }}>
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function EmptyCountryPrompt({ activeMission }) {
-  return (
-    <div
-      className="rounded-[2rem] border p-5 backdrop-blur-2xl"
-      style={{
-        background:
-          "linear-gradient(135deg, rgba(14,3,4,0.62), rgba(10,2,3,0.48)), radial-gradient(circle at 10% 0%, rgba(196,150,42,0.14), transparent 34%)",
-        borderColor: "rgba(196,150,42,0.22)",
-        boxShadow:
-          "0 0 45px rgba(196,150,42,0.08), inset 0 0 42px rgba(196,150,42,0.025)",
-      }}
-    >
-      <p className="text-xs uppercase tracking-[0.28em] font-black" style={{ color: "#FFD880" }}>
-        Awaiting target
-      </p>
-      <h2 className="mt-2 text-4xl font-black" style={{ fontFamily: "Georgia, serif" }}>
-        Select a country.
-      </h2>
-      <p className="mt-3 text-sm leading-6 text-white/58">
-        Rotate the holographic globe or use the destination console. Once a target is selected, Porter opens the briefing panel.
-      </p>
-      <p className="mt-4 text-xs uppercase tracking-[0.2em] font-black" style={{ color: COLORS.champagne }}>
-        {activeMission.eyebrow} active
-      </p>
-    </div>
   );
 }
 
@@ -1506,31 +1550,17 @@ function ConnectorBeam() {
       />
       <div
         className="absolute right-0 top-1/2 h-2 w-2 -translate-y-1/2 rounded-full"
-        style={{
-          background: COLORS.champagneLight,
-          boxShadow: "0 0 18px rgba(243,213,138,0.8)",
-        }}
+        style={{ background: COLORS.champagneLight, boxShadow: "0 0 18px rgba(243,213,138,0.8)" }}
       />
     </div>
   );
 }
 
-function FloatingIntelPanel({
-  mission,
-  country,
-  selected,
-  routeComplete,
-  anchorWinner,
-  companionWinner,
-  onVote,
-  onAdvance,
-  onDeepDive,
-  briefs = [],
-  mobile = false,
-}) {
+function FloatingIntelPanel({ country, ranked = [], votingOpen, onAddToBallot, onBack, onDeepDive, briefs = [], mobile = false }) {
   if (!country) return null;
-  const cityAName = country.cityA?.name || country.name;
-  const brief = briefs.find((b) => b.country_name.toLowerCase() === cityAName.toLowerCase());
+  const brief = briefs.find((b) => b.country_name.toLowerCase() === country.name.toLowerCase());
+  const inBallot = ranked.includes(country.name);
+  const ballotFull = ranked.length >= 3;
 
   return (
     <div
@@ -1543,8 +1573,7 @@ function FloatingIntelPanel({
           "linear-gradient(135deg, rgba(14,3,4,0.80), rgba(10,2,3,0.68)), radial-gradient(circle at 10% 0%, rgba(196,150,42,0.18), transparent 34%)",
         borderColor: "rgba(196,150,42,0.26)",
         WebkitOverflowScrolling: "touch",
-        boxShadow:
-          "0 0 48px rgba(196,150,42,0.10), 0 30px 120px rgba(0,0,0,0.64), inset 0 0 42px rgba(196,150,42,0.04)",
+        boxShadow: "0 0 48px rgba(196,150,42,0.10), 0 30px 120px rgba(0,0,0,0.64), inset 0 0 42px rgba(196,150,42,0.04)",
       }}
     >
       <div
@@ -1555,7 +1584,6 @@ function FloatingIntelPanel({
           backgroundSize: "26px 26px",
         }}
       />
-
       <CornerBrackets />
 
       <div className="relative z-10 p-4 sm:p-5">
@@ -1563,21 +1591,22 @@ function FloatingIntelPanel({
           <div
             className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border text-3xl sm:h-16 sm:w-16"
             style={{
-              background: selected ? "rgba(243,213,138,0.12)" : "rgba(196,150,42,0.08)",
-              borderColor: selected ? "rgba(243,213,138,0.28)" : "rgba(196,150,42,0.22)",
+              background: inBallot ? "rgba(243,213,138,0.12)" : "rgba(196,150,42,0.08)",
+              borderColor: inBallot ? "rgba(243,213,138,0.28)" : "rgba(196,150,42,0.22)",
             }}
           >
             {countryIcon(country)}
           </div>
-
           <div className="min-w-0 flex-1">
             <p className="text-[10px] uppercase tracking-[0.26em] font-black" style={{ color: "#FFD880" }}>
-              Target acquired · {mission.eyebrow}
+              Target acquired · City A
             </p>
             <h2 className="mt-1 truncate text-3xl font-black leading-none sm:text-4xl" style={{ fontFamily: "Georgia, serif" }}>
               {country.name}
             </h2>
-            <p className="mt-2 truncate text-sm text-white/48">{country.region} · {country.note}</p>
+            <p className="mt-2 truncate text-sm text-white/48">
+              {country.region} · {country.note}
+            </p>
           </div>
         </div>
 
@@ -1613,17 +1642,12 @@ function FloatingIntelPanel({
             Porter read
           </p>
           <p className="mt-2 text-sm leading-6 text-white/65">{country.porter}</p>
-
           <div className="mt-4 flex flex-wrap gap-2">
             {country.reasons.map((reason) => (
               <span
                 key={reason}
                 className="rounded-full border px-3 py-1 text-xs font-bold"
-                style={{
-                  background: "rgba(196,150,42,0.08)",
-                  borderColor: "rgba(196,150,42,0.18)",
-                  color: "#FFD880",
-                }}
+                style={{ background: "rgba(196,150,42,0.08)", borderColor: "rgba(196,150,42,0.18)", color: "#FFD880" }}
               >
                 {reason}
               </span>
@@ -1639,73 +1663,68 @@ function FloatingIntelPanel({
               </p>
               <span className="text-[9px] uppercase tracking-[0.14em] font-black opacity-60">◆</span>
             </div>
-            {brief.team_members && (
-              <p className="mt-1 text-[10px] text-white/45 uppercase tracking-[0.12em]">Team — {brief.team_members}</p>
-            )}
+            {brief.team_members && <p className="mt-1 text-[10px] text-white/45 uppercase tracking-[0.12em]">Team — {brief.team_members}</p>}
             <p className="mt-2 text-sm leading-6 text-white/70 line-clamp-4">{brief.content}</p>
           </div>
         )}
 
-        {!mobile && (() => {
-          const cohorts = getCohortsForCity(country.name);
-          const orgs = getPreviousVisitOrgsForCity(country.name);
-          const freshness = getFreshnessLabel(country.name);
-          const operatorRead = getCohortBuiltConnectionRead(country.name);
-          const displayOrgs = orgs.slice(0, 6);
-          const extraOrgs = orgs.length - displayOrgs.length;
-          const freshnessColor =
-            freshness === "Fresh pick"
-              ? "#7DD3C0"
-              : freshness === "Some precedent"
-              ? "#A8C5E8"
-              : freshness === "Strong precedent"
-              ? "#E8B84B"
-              : "#E07060";
-          return (
-            <div className="mt-4 rounded-3xl border p-4" style={{ background: "rgba(0,0,0,0.28)", borderColor: "rgba(196,150,42,0.16)" }}>
-              <div className="flex items-center gap-2 mb-3">
-                <p className="text-xs uppercase tracking-[0.18em] font-black" style={{ color: COLORS.champagne }}>
-                  DU signal
-                </p>
-                <span
-                  className="rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider"
-                  style={{ background: "rgba(0,0,0,0.30)", border: `1px solid ${freshnessColor}44`, color: freshnessColor }}
-                >
-                  {freshness}
-                </span>
-              </div>
-              {cohorts.length > 0 && (
-                <p className="text-[10px] text-white/48 mb-2 font-bold">
-                  Cohorts {cohorts.join(", ")}
-                </p>
-              )}
-              {orgs.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mb-3">
-                  {displayOrgs.map((org) => (
-                    <span
-                      key={org}
-                      className="rounded-full px-2 py-0.5 text-[9px] font-bold"
-                      style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.10)", color: "rgba(255,255,255,0.52)" }}
-                    >
-                      {org}
-                    </span>
-                  ))}
-                  {extraOrgs > 0 && (
-                    <span
-                      className="rounded-full px-2 py-0.5 text-[9px] font-bold"
-                      style={{ background: "rgba(196,150,42,0.08)", border: "1px solid rgba(196,150,42,0.18)", color: "#FFD88066" }}
-                    >
-                      +{extraOrgs} more
-                    </span>
-                  )}
+        {!mobile &&
+          (() => {
+            const cohorts = getCohortsForCity(country.name);
+            const orgs = getPreviousVisitOrgsForCity(country.name);
+            const freshness = getFreshnessLabel(country.name);
+            const operatorRead = getCohortBuiltConnectionRead(country.name);
+            const displayOrgs = orgs.slice(0, 6);
+            const extraOrgs = orgs.length - displayOrgs.length;
+            const freshnessColor =
+              freshness === "Fresh pick"
+                ? "#7DD3C0"
+                : freshness === "Some precedent"
+                  ? "#A8C5E8"
+                  : freshness === "Strong precedent"
+                    ? "#E8B84B"
+                    : "#E07060";
+            return (
+              <div className="mt-4 rounded-3xl border p-4" style={{ background: "rgba(0,0,0,0.28)", borderColor: "rgba(196,150,42,0.16)" }}>
+                <div className="flex items-center gap-2 mb-3">
+                  <p className="text-xs uppercase tracking-[0.18em] font-black" style={{ color: COLORS.champagne }}>
+                    DU signal
+                  </p>
+                  <span
+                    className="rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider"
+                    style={{ background: "rgba(0,0,0,0.30)", border: `1px solid ${freshnessColor}44`, color: freshnessColor }}
+                  >
+                    {freshness}
+                  </span>
                 </div>
-              )}
-              <p className="text-[10px] leading-4 text-white/40 italic">{operatorRead}</p>
-            </div>
-          );
-        })()}
+                {cohorts.length > 0 && <p className="text-[10px] text-white/48 mb-2 font-bold">Cohorts {cohorts.join(", ")}</p>}
+                {orgs.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mb-3">
+                    {displayOrgs.map((org) => (
+                      <span
+                        key={org}
+                        className="rounded-full px-2 py-0.5 text-[9px] font-bold"
+                        style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.10)", color: "rgba(255,255,255,0.52)" }}
+                      >
+                        {org}
+                      </span>
+                    ))}
+                    {extraOrgs > 0 && (
+                      <span
+                        className="rounded-full px-2 py-0.5 text-[9px] font-bold"
+                        style={{ background: "rgba(196,150,42,0.08)", border: "1px solid rgba(196,150,42,0.18)", color: "#FFD88066" }}
+                      >
+                        +{extraOrgs} more
+                      </span>
+                    )}
+                  </div>
+                )}
+                <p className="text-[10px] leading-4 text-white/40 italic">{operatorRead}</p>
+              </div>
+            );
+          })()}
 
-        {(mission.mode === "anchor-longlist" || mission.mode === "anchor-runoff") && CITY_B_MAP[country.name]?.length > 0 && (
+        {CITY_B_MAP[country.name]?.length > 0 && (
           <div className="mt-4 rounded-3xl border border-white/10 bg-black/30 p-4">
             <p className="text-xs uppercase tracking-[0.18em] font-black" style={{ color: COLORS.champagne }}>
               City B options
@@ -1715,11 +1734,7 @@ function FloatingIntelPanel({
                 <span
                   key={name}
                   className="rounded-full border px-3 py-1 text-xs font-bold"
-                  style={{
-                    background: "rgba(255,255,255,0.05)",
-                    borderColor: "rgba(255,255,255,0.12)",
-                    color: "rgba(255,255,255,0.62)",
-                  }}
+                  style={{ background: "rgba(255,255,255,0.05)", borderColor: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.62)" }}
                 >
                   {name}
                 </span>
@@ -1728,59 +1743,39 @@ function FloatingIntelPanel({
           </div>
         )}
 
-        {routeComplete && (
-          <div className="mt-3 rounded-3xl border p-4" style={{ borderColor: "rgba(243,213,138,0.24)", background: "rgba(243,213,138,0.08)" }}>
-            <p className="text-[10px] uppercase tracking-[0.24em] font-black" style={{ color: COLORS.champagneLight }}>
-              Route locked
-            </p>
-            <p className="mt-1 text-sm font-black text-white">
-              {anchorWinner?.name} + {companionWinner?.name}
-            </p>
+        <div className="mt-4 grid gap-2">
+          {votingOpen && (
+            <button
+              onClick={() => onAddToBallot?.(country.name)}
+              disabled={inBallot || ballotFull}
+              className="rounded-2xl px-4 py-3 text-center font-black uppercase tracking-[0.08em] disabled:opacity-60"
+              style={{
+                background: inBallot ? "rgba(243,213,138,0.12)" : `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne}, ${COLORS.ember})`,
+                color: inBallot ? COLORS.champagneLight : COLORS.midnight,
+                border: inBallot ? "1px solid rgba(243,213,138,0.28)" : "none",
+              }}
+            >
+              {inBallot ? "✓ On your ballot" : ballotFull ? "Ballot full · top 3 picked" : "Add to my ballot"}
+            </button>
+          )}
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            <button
+              onClick={onBack}
+              className="rounded-2xl px-4 py-2.5 text-center font-black uppercase tracking-[0.1em] text-xs border"
+              style={{ background: "rgba(196,150,42,0.08)", border: "1px solid rgba(196,150,42,0.22)", color: "#FFD880" }}
+            >
+              ← Back to ballot
+            </button>
+            <button
+              onClick={() => onDeepDive?.(country)}
+              className="rounded-2xl px-4 py-2.5 text-center font-black uppercase tracking-[0.1em] text-xs border transition-all hover:border-[rgba(243,213,138,0.4)]"
+              style={{ background: "rgba(196,150,42,0.05)", border: "1px solid rgba(196,150,42,0.18)", color: "rgba(243,213,138,0.72)" }}
+            >
+              Deep dive → full intel
+            </button>
           </div>
-        )}
-
-        <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto]">
-          <button
-            onClick={onVote}
-            className="rounded-2xl px-4 py-3 text-left font-black uppercase tracking-[0.08em]"
-            style={{
-              background: selected
-                ? "rgba(243,213,138,0.12)"
-                : `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne}, ${COLORS.ember})`,
-              color: selected ? COLORS.champagneLight : COLORS.midnight,
-              border: selected ? "1px solid rgba(243,213,138,0.28)" : "none",
-            }}
-          >
-            {selected ? "Target selected" : mission.voteLabel}
-          </button>
-
-          <button
-            onClick={onAdvance}
-            disabled={!mission.canAdvance}
-            className="rounded-2xl px-4 py-3 text-left font-black uppercase tracking-[0.08em] disabled:opacity-35"
-            style={{
-              background: "rgba(196,150,42,0.08)",
-              border: "1px solid rgba(196,150,42,0.22)",
-              color: "#FFD880",
-            }}
-          >
-            {`${mission.nextLabel} →`}
-          </button>
         </div>
-
-        {!mobile && (
-          <button
-            onClick={() => onDeepDive?.(country)}
-            className="mt-2 w-full rounded-2xl px-4 py-2.5 text-center font-black uppercase tracking-[0.1em] text-xs border transition-all hover:border-[rgba(243,213,138,0.4)]"
-            style={{
-              background: "rgba(196,150,42,0.05)",
-              border: "1px solid rgba(196,150,42,0.18)",
-              color: "rgba(243,213,138,0.72)",
-            }}
-          >
-            Deep dive → full intel
-          </button>
-        )}
       </div>
     </div>
   );
@@ -1797,70 +1792,40 @@ function CornerBrackets() {
   );
 }
 
-function DeepDivePanel({ country, mission, selected, onClose, onVote }) {
+function DeepDivePanel({ country, onClose }) {
   const data = DEEP_DIVE[country.name] || {};
 
   return (
     <div className="absolute inset-0 z-50 flex flex-col overflow-hidden deep-dive-enter">
       <div
         className="absolute inset-0"
-        style={{
-          background:
-            "linear-gradient(180deg, rgba(4,3,0,0.96) 0%, rgba(8,7,0,0.94) 100%)",
-          backdropFilter: "blur(24px)",
-        }}
+        style={{ background: "linear-gradient(180deg, rgba(4,3,0,0.96) 0%, rgba(8,7,0,0.94) 100%)", backdropFilter: "blur(24px)" }}
       />
 
       <div className="relative z-10 flex flex-col h-full overflow-y-auto chamber-scrollbar">
         <div
           className="sticky top-0 z-20 flex items-center gap-3 px-5 py-3 border-b"
-          style={{
-            background: "rgba(4,3,0,0.88)",
-            borderColor: "rgba(196,150,42,0.18)",
-            backdropFilter: "blur(12px)",
-          }}
+          style={{ background: "rgba(4,3,0,0.88)", borderColor: "rgba(196,150,42,0.18)", backdropFilter: "blur(12px)" }}
         >
           <button
             onClick={onClose}
             className="flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-black border"
-            style={{
-              background: "rgba(196,150,42,0.08)",
-              borderColor: "rgba(196,150,42,0.22)",
-              color: "#FFD880",
-            }}
+            style={{ background: "rgba(196,150,42,0.08)", borderColor: "rgba(196,150,42,0.22)", color: "#FFD880" }}
           >
             ← Back
           </button>
-
           <div className="flex-1 min-w-0">
             <div className="text-[9px] uppercase tracking-[0.3em] font-black" style={{ color: "rgba(243,213,138,0.55)" }}>
-              Deep Dive · {mission.eyebrow}
+              Deep Dive · City A
             </div>
             <div className="text-lg font-black truncate" style={{ fontFamily: "Georgia, serif" }}>
               {countryIcon(country)} {country.name}
             </div>
           </div>
-
-          <button
-            onClick={onVote}
-            className="shrink-0 rounded-2xl px-4 py-2 text-xs font-black"
-            style={
-              selected
-                ? { background: "rgba(243,213,138,0.12)", color: COLORS.champagneLight, border: "1px solid rgba(243,213,138,0.28)" }
-                : { background: `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne}, ${COLORS.ember})`, color: COLORS.midnight }
-            }
-          >
-            {selected ? "✓ Voted" : mission.voteLabel}
-          </button>
         </div>
 
         <div className="relative h-56 sm:h-72 shrink-0 overflow-hidden">
-          <img
-            src={country.image}
-            alt={country.name}
-            className="absolute inset-0 w-full h-full"
-            style={{ objectFit: "cover" }}
-          />
+          <img src={country.image} alt={country.name} className="absolute inset-0 w-full h-full" style={{ objectFit: "cover" }} />
           <div
             className="absolute inset-0"
             style={{
@@ -1917,13 +1882,15 @@ function DeepDivePanel({ country, mission, selected, onClose, onVote }) {
             <div className="rounded-2xl px-4 py-3 border flex items-start gap-3" style={{ background: "rgba(0,0,0,0.22)", borderColor: "rgba(196,150,42,0.14)" }}>
               <span className="text-lg shrink-0">💵</span>
               <div>
-                <div className="text-[9px] uppercase tracking-[0.2em] font-black mb-1" style={{ color: "rgba(243,213,138,0.55)" }}>Currency & payments</div>
+                <div className="text-[9px] uppercase tracking-[0.2em] font-black mb-1" style={{ color: "rgba(243,213,138,0.55)" }}>
+                  Currency & payments
+                </div>
                 <p className="text-xs text-white/70 leading-5">{data.currency}</p>
               </div>
             </div>
           )}
 
-          {(mission.mode === "anchor-longlist" || mission.mode === "anchor-runoff") && CITY_B_MAP[country.name]?.length > 0 && (
+          {CITY_B_MAP[country.name]?.length > 0 && (
             <div>
               <div className="text-[10px] uppercase tracking-[0.26em] font-black mb-3" style={{ color: "#FFD880" }}>
                 City B add-on options
@@ -1933,11 +1900,7 @@ function DeepDivePanel({ country, mission, selected, onClose, onVote }) {
                   <span
                     key={name}
                     className="rounded-full border px-3 py-1.5 text-xs font-bold"
-                    style={{
-                      background: "rgba(255,255,255,0.05)",
-                      borderColor: "rgba(255,255,255,0.12)",
-                      color: "rgba(255,255,255,0.65)",
-                    }}
+                    style={{ background: "rgba(255,255,255,0.05)", borderColor: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.65)" }}
                   >
                     {name}
                   </span>
@@ -1953,12 +1916,10 @@ function DeepDivePanel({ country, mission, selected, onClose, onVote }) {
               </div>
               <div className="space-y-2">
                 {data.experiences.map((exp, i) => (
-                  <div
-                    key={i}
-                    className="flex items-start gap-3 rounded-2xl px-4 py-3 border"
-                    style={{ background: "rgba(196,150,42,0.05)", borderColor: "rgba(196,150,42,0.14)" }}
-                  >
-                    <span className="shrink-0 text-sm" style={{ color: COLORS.gold }}>◆</span>
+                  <div key={i} className="flex items-start gap-3 rounded-2xl px-4 py-3 border" style={{ background: "rgba(196,150,42,0.05)", borderColor: "rgba(196,150,42,0.14)" }}>
+                    <span className="shrink-0 text-sm" style={{ color: COLORS.gold }}>
+                      ◆
+                    </span>
                     <span className="text-sm text-white/78 leading-5">{exp}</span>
                   </div>
                 ))}
@@ -2003,7 +1964,9 @@ function DeepDivePanel({ country, mission, selected, onClose, onVote }) {
                 {data.restaurants.map((r, i) => (
                   <div key={i} className="rounded-2xl px-4 py-3 border" style={{ background: "rgba(0,0,0,0.22)", borderColor: "rgba(255,255,255,0.08)" }}>
                     <div className="text-sm font-black text-white/90 mb-0.5">{r.name}</div>
-                    <div className="text-[10px] uppercase tracking-wider font-bold mb-1" style={{ color: `${COLORS.champagne}88` }}>{r.dish}</div>
+                    <div className="text-[10px] uppercase tracking-wider font-bold mb-1" style={{ color: `${COLORS.champagne}88` }}>
+                      {r.dish}
+                    </div>
                     <p className="text-xs text-white/55 leading-5">{r.note}</p>
                   </div>
                 ))}
@@ -2052,10 +2015,10 @@ function DeepDivePanel({ country, mission, selected, onClose, onVote }) {
               freshness === "Fresh pick"
                 ? "#7DD3C0"
                 : freshness === "Some precedent"
-                ? "#A8C5E8"
-                : freshness === "Strong precedent"
-                ? "#E8B84B"
-                : "#E07060";
+                  ? "#A8C5E8"
+                  : freshness === "Strong precedent"
+                    ? "#E8B84B"
+                    : "#E07060";
             return (
               <div className="rounded-2xl border p-4" style={{ background: "rgba(0,0,0,0.28)", borderColor: "rgba(196,150,42,0.16)" }}>
                 <div className="flex items-center gap-2 mb-3">
@@ -2111,15 +2074,11 @@ function DeepDivePanel({ country, mission, selected, onClose, onVote }) {
           })()}
 
           <button
-            onClick={onVote}
+            onClick={onClose}
             className="w-full rounded-2xl px-4 py-4 font-black uppercase tracking-[0.08em] text-base"
-            style={
-              selected
-                ? { background: "rgba(243,213,138,0.10)", color: COLORS.champagneLight, border: "1px solid rgba(243,213,138,0.28)" }
-                : { background: `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne}, ${COLORS.ember})`, color: COLORS.midnight }
-            }
+            style={{ background: "rgba(196,150,42,0.08)", border: "1px solid rgba(196,150,42,0.22)", color: "#FFD880" }}
           >
-            {selected ? "✓ Vote cast for " + country.name : mission.voteLabel + " — " + country.name}
+            ← Back to the chamber
           </button>
         </div>
       </div>
@@ -2129,18 +2088,19 @@ function DeepDivePanel({ country, mission, selected, onClose, onVote }) {
 
 function DeepDiveStat({ icon, label, value }) {
   return (
-    <div
-      className="rounded-2xl px-3 py-3 border"
-      style={{ background: "rgba(0,0,0,0.30)", borderColor: "rgba(196,150,42,0.14)" }}
-    >
+    <div className="rounded-2xl px-3 py-3 border" style={{ background: "rgba(0,0,0,0.30)", borderColor: "rgba(196,150,42,0.14)" }}>
       <div className="text-lg mb-1">{icon}</div>
       <div className="text-[9px] uppercase tracking-[0.18em] text-white/38 font-black mb-1">{label}</div>
-      <div className="text-xs font-bold leading-4" style={{ color: COLORS.champagneLight }}>{value}</div>
+      <div className="text-xs font-bold leading-4" style={{ color: COLORS.champagneLight }}>
+        {value}
+      </div>
     </div>
   );
 }
 
-function DestinationLockedOverlay({ anchorWinner, companionWinner, onDismiss }) {
+/* ── Celebration overlay: the two finalists locked ───────────────────────────── */
+function FinalistsLockedOverlay({ finalists, onDismiss }) {
+  const [a, b] = finalists;
   return (
     <div className="absolute inset-0 z-[200] flex items-center justify-center celebration-enter">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
@@ -2152,40 +2112,38 @@ function DestinationLockedOverlay({ anchorWinner, companionWinner, onDismiss }) 
           background:
             "linear-gradient(155deg, rgba(12,8,0,0.96) 0%, rgba(6,4,0,0.94) 100%), radial-gradient(circle at 30% 10%, rgba(196,150,42,0.28), transparent 50%)",
           borderColor: "rgba(243,213,138,0.34)",
-          boxShadow:
-            "0 0 80px rgba(196,150,42,0.26), 0 0 160px rgba(196,150,42,0.12), inset 0 0 60px rgba(196,150,42,0.05)",
+          boxShadow: "0 0 80px rgba(196,150,42,0.26), 0 0 160px rgba(196,150,42,0.12), inset 0 0 60px rgba(196,150,42,0.05)",
         }}
       >
         <CornerBrackets />
-
         <div className="relative p-7 text-center">
           <div
             className="inline-flex items-center gap-2 rounded-full border px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.28em] mb-4"
             style={{ borderColor: "rgba(243,213,138,0.30)", color: "#FFD880", background: "rgba(196,150,42,0.08)" }}
           >
             <span className="h-1.5 w-1.5 rounded-full bg-[#E8B84B] animate-pulse" />
-            Route locked
+            Finalists locked
           </div>
 
           <h1 className="text-5xl font-black" style={{ fontFamily: "Georgia, serif", color: COLORS.champagneLight }}>
-            {countryIcon(anchorWinner)}
+            {countryIcon(a)}
           </h1>
           <h1 className="text-5xl font-black mt-1" style={{ fontFamily: "Georgia, serif", color: COLORS.champagneLight }}>
-            {countryIcon(companionWinner)}
+            {countryIcon(b)}
           </h1>
 
           <div className="mt-4">
             <div className="text-2xl font-black" style={{ fontFamily: "Georgia, serif" }}>
-              {anchorWinner.name}
+              {a.name}
             </div>
             <div className="text-sm text-white/40 my-1">+</div>
             <div className="text-2xl font-black" style={{ fontFamily: "Georgia, serif" }}>
-              {companionWinner.name}
+              {b.name}
             </div>
           </div>
 
           <p className="mt-5 text-sm text-white/60 leading-6">
-            The Global 85 destination is locked. Porter is briefing the full itinerary.
+            The cohort ranked these two City A finalists highest. They advance to the next round.
           </p>
 
           {TRIP_DATE && <TripCountdownMini tripDate={TRIP_DATE} />}
@@ -2193,12 +2151,9 @@ function DestinationLockedOverlay({ anchorWinner, companionWinner, onDismiss }) 
           <button
             onClick={onDismiss}
             className="mt-6 w-full rounded-2xl px-4 py-4 font-black text-base"
-            style={{
-              background: `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne}, ${COLORS.ember})`,
-              color: COLORS.midnight,
-            }}
+            style={{ background: `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne}, ${COLORS.ember})`, color: COLORS.midnight }}
           >
-            View the route →
+            See the results →
           </button>
         </div>
       </div>
@@ -2214,9 +2169,7 @@ function ConfettiLayer() {
         x: Math.random() * 100,
         delay: Math.random() * 2.5,
         duration: 2.2 + Math.random() * 2,
-        color: ["#F3D58A", "#E8B84B", "#C4962A", "#BA0C2F", "#ffffff", "#FFE8A3", "#C65A2E"][
-          Math.floor(Math.random() * 7)
-        ],
+        color: ["#F3D58A", "#E8B84B", "#C4962A", "#BA0C2F", "#ffffff", "#FFE8A3", "#C65A2E"][Math.floor(Math.random() * 7)],
         size: 6 + Math.random() * 9,
         rotate: Math.random() * 360,
       })),
@@ -2248,7 +2201,6 @@ function ConfettiLayer() {
 
 function TripCountdownMini({ tripDate }) {
   const [timeLeft, setTimeLeft] = useState(null);
-
   useEffect(() => {
     function calc() {
       const diff = new Date(tripDate) - new Date();
@@ -2280,18 +2232,8 @@ function TripCountdownMini({ tripDate }) {
   );
 }
 
-function DestinationConsole({
-  countries,
-  activeCountry,
-  selectedName,
-  finalistNames,
-  onSelectCountry,
-  onPorterPick,
-  onAdvance,
-  canAdvance,
-  routeComplete,
-  briefs = [],
-}) {
+/* ── Bottom console: browse candidates on the globe ──────────────────────────── */
+function DestinationConsole({ countries, activeCountry, winnerNames = [], ranked = [], onSelectCountry, briefs = [] }) {
   return (
     <div
       className="rounded-[1.5rem] border p-2.5 backdrop-blur-2xl sm:rounded-[1.8rem] sm:p-3"
@@ -2299,8 +2241,7 @@ function DestinationConsole({
         background:
           "linear-gradient(180deg, rgba(14,3,4,0.62), rgba(0,0,0,0.52)), radial-gradient(circle at 50% 0%, rgba(196,150,42,0.14), transparent 60%)",
         borderColor: "rgba(196,150,42,0.24)",
-        boxShadow:
-          "0 -10px 50px rgba(196,150,42,0.07), 0 22px 95px rgba(0,0,0,0.84), inset 0 1px 0 rgba(255,232,163,0.08)",
+        boxShadow: "0 -10px 50px rgba(196,150,42,0.07), 0 22px 95px rgba(0,0,0,0.84), inset 0 1px 0 rgba(255,232,163,0.08)",
       }}
     >
       <div className="mb-2 flex items-center justify-between gap-3 px-1">
@@ -2312,42 +2253,14 @@ function DestinationConsole({
             Targets available · choose a country to materialize intel
           </p>
         </div>
-
-        <div className="flex shrink-0 gap-2">
-          <button
-            onClick={onPorterPick}
-            className="rounded-full border px-3 py-2 text-[9px] font-black uppercase tracking-[0.14em] sm:text-[10px]"
-            style={{
-              background: "rgba(196,150,42,0.08)",
-              borderColor: "rgba(196,150,42,0.22)",
-              color: "#FFD880",
-            }}
-          >
-            Porter
-          </button>
-
-          <button
-            onClick={onAdvance}
-            disabled={!canAdvance || routeComplete}
-            className="hidden rounded-full border px-3 py-2 text-[10px] font-black uppercase tracking-[0.14em] disabled:opacity-30 sm:block"
-            style={{
-              background: canAdvance && !routeComplete ? `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne})` : "rgba(255,255,255,0.035)",
-              borderColor: canAdvance && !routeComplete ? "transparent" : "rgba(255,255,255,0.10)",
-              color: canAdvance && !routeComplete ? COLORS.midnight : "rgba(255,255,255,0.32)",
-            }}
-          >
-            Advance
-          </button>
-        </div>
       </div>
 
       <div className="chamber-scrollbar flex gap-2 overflow-x-auto pb-1">
         {countries.map((country) => {
           const active = activeCountry?.name === country.name;
-          const selected = selectedName === country.name;
-          const finalist = finalistNames?.includes(country.name);
-          const cityAName = country.cityA?.name || country.name;
-          const hasBrief = briefs.some((b) => b.country_name.toLowerCase() === cityAName.toLowerCase());
+          const finalist = winnerNames.includes(country.name);
+          const onBallot = ranked.includes(country.name);
+          const hasBrief = briefs.some((b) => b.country_name.toLowerCase() === country.name.toLowerCase());
 
           return (
             <button
@@ -2356,24 +2269,20 @@ function DestinationConsole({
               className="shrink-0 rounded-2xl border px-3 py-2 text-left transition"
               style={{
                 minWidth: "126px",
-                background: selected
+                background: finalist
                   ? `linear-gradient(135deg, ${COLORS.champagneLight}, ${COLORS.champagne})`
                   : active
                     ? "rgba(196,150,42,0.18)"
                     : "rgba(255,255,255,0.038)",
-                color: selected ? COLORS.midnight : "rgba(255,255,255,0.76)",
-                borderColor: selected
-                  ? "transparent"
-                  : active
-                    ? "rgba(196,150,42,0.52)"
-                    : "rgba(255,255,255,0.09)",
+                color: finalist ? COLORS.midnight : "rgba(255,255,255,0.76)",
+                borderColor: finalist ? "transparent" : active ? "rgba(196,150,42,0.52)" : "rgba(255,255,255,0.09)",
                 boxShadow: active ? "0 0 22px rgba(196,150,42,0.14)" : "none",
               }}
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-lg">{countryIcon(country)}</span>
-                {selected && <span className="text-[9px] font-black">VOTED</span>}
-                {!selected && finalist && <span className="text-[9px] font-black text-white/38">TOP 2</span>}
+                {finalist && <span className="text-[9px] font-black">TOP 2</span>}
+                {!finalist && onBallot && <span className="text-[9px] font-black text-white/45">RANKED</span>}
               </div>
               <div className="mt-1 truncate text-sm font-black">{country.name}</div>
               <div className="truncate text-[10px] opacity-60">{country.region}</div>
@@ -2407,17 +2316,11 @@ function ChamberReticle({ activeCountry, pulseKey }) {
       >
         <div
           className="absolute left-1/2 top-0 bottom-0"
-          style={{
-            width: "1px",
-            background: "linear-gradient(180deg, transparent, rgba(196,150,42,0.26), transparent)",
-          }}
+          style={{ width: "1px", background: "linear-gradient(180deg, transparent, rgba(196,150,42,0.26), transparent)" }}
         />
         <div
           className="absolute top-1/2 left-0 right-0"
-          style={{
-            height: "1px",
-            background: "linear-gradient(90deg, transparent, rgba(196,150,42,0.26), transparent)",
-          }}
+          style={{ height: "1px", background: "linear-gradient(90deg, transparent, rgba(196,150,42,0.26), transparent)" }}
         />
         <div className="absolute inset-[18%] rounded-full" style={{ border: "1px dashed rgba(196,150,42,0.16)" }} />
         <div className="absolute inset-[32%] rounded-full" style={{ border: "1px solid rgba(243,213,138,0.08)" }} />
