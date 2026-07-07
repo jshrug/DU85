@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import Globe from "react-globe.gl";
 import * as THREE from "three";
-import { COLORS, TRIP_DATE } from "../constants.js";
+import { COLORS, COHORT_SIZE, TRIP_DATE } from "../constants.js";
 import { ANCHOR_COUNTRIES, CITY_B_MAP } from "../data/cityData.js";
 import { getCountryByName, countryIcon, getInitialGlobeSize, findBriefForCountry } from "../utils/voteUtils.js";
 import { useAuth } from "../lib/AuthContext.jsx";
@@ -1196,7 +1196,7 @@ function AdminBar({ status, busy, onOpen, onClose, onReopen }) {
   const [confirm, setConfirm] = useState(null); // 'open' | 'close' | 'reopen'
   const act = { open: onOpen, close: onClose, reopen: onReopen }[confirm];
   const copy = {
-    open: "Open voting for all 85 members?",
+    open: `Open voting for all ${COHORT_SIZE} members?`,
     close: "Close voting and reveal the top 2? This tallies every ballot.",
     reopen: "Reopen voting? This lets members change their ballots again.",
   }[confirm];
