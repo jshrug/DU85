@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback, lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
 import Globe from "react-globe.gl";
 import * as THREE from "three";
@@ -26,6 +26,8 @@ import {
   setVoteStatus,
   closeAndTally,
 } from "../lib/vote.js";
+
+const PdfViewerModal = lazy(() => import("../components/features/PdfViewerModal.jsx"));
 
 // The 8 City A candidates come from ANCHOR_COUNTRIES — the same source the globe
 // uses to place its points, so the chamber keeps showing every candidate.
@@ -71,8 +73,17 @@ export default function VotesPage() {
   const [showCelebration, setShowCelebration] = useState(false);
   const prevStatus = useRef(null);
 
+  // Briefs get submitted via Porter while this page may already be open, so
+  // poll instead of fetching once — porter_memory isn't on realtime replication.
   useEffect(() => {
-    fetchCountryBriefs().then(setBriefs).catch(() => {});
+    let active = true;
+    const tick = () => fetchCountryBriefs().then((b) => active && setBriefs(b)).catch(() => {});
+    tick();
+    const id = setInterval(tick, 20000);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
   }, []);
 
   useEffect(() => {
@@ -1557,6 +1568,13 @@ function ConnectorBeam() {
 }
 
 function FloatingIntelPanel({ country, ranked = [], votingOpen, onAddToBallot, onBack, onDeepDive, briefs = [], mobile = false }) {
+  const [briefExpanded, setBriefExpanded] = useState(false);
+  const [viewingBrief, setViewingBrief] = useState(null);
+  useEffect(() => {
+    setBriefExpanded(false);
+    setViewingBrief(null);
+  }, [country?.name]);
+
   if (!country) return null;
   const brief = findBriefForCountry(briefs, country);
   const inBallot = ranked.includes(country.name);
@@ -1664,8 +1682,50 @@ function FloatingIntelPanel({ country, ranked = [], votingOpen, onAddToBallot, o
               <span className="text-[9px] uppercase tracking-[0.14em] font-black opacity-60">◆</span>
             </div>
             {brief.team_members && <p className="mt-1 text-[10px] text-white/45 uppercase tracking-[0.12em]">Team — {brief.team_members}</p>}
-            <p className="mt-2 text-sm leading-6 text-white/70 line-clamp-4">{brief.content}</p>
+            <p className={`mt-2 text-sm leading-6 text-white/70 ${briefExpanded ? "" : "line-clamp-4"}`}>{brief.content}</p>
+            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+              {brief.content.length > 220 && (
+                <button
+                  onClick={() => setBriefExpanded((v) => !v)}
+                  className="text-[9px] font-black uppercase tracking-[0.18em]"
+                  style={{ color: COLORS.champagne }}
+                >
+                  {briefExpanded ? "Show less" : "Read full brief ↓"}
+                </button>
+              )}
+              {brief.download_url && (
+                brief.file_type === "application/pdf" ? (
+                  <button
+                    onClick={() => setViewingBrief(brief)}
+                    className="text-[9px] font-black uppercase tracking-[0.18em]"
+                    style={{ color: COLORS.champagne }}
+                  >
+                    View original PDF ↗
+                  </button>
+                ) : (
+                  <a
+                    href={brief.download_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-[9px] font-black uppercase tracking-[0.18em]"
+                    style={{ color: COLORS.champagne }}
+                  >
+                    Download original file ↗
+                  </a>
+                )
+              )}
+            </div>
           </div>
+        )}
+
+        {viewingBrief && (
+          <Suspense fallback={null}>
+            <PdfViewerModal
+              url={viewingBrief.download_url}
+              filename={viewingBrief.file_name}
+              onClose={() => setViewingBrief(null)}
+            />
+          </Suspense>
         )}
 
         {!mobile &&
