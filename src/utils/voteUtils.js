@@ -83,6 +83,21 @@ export function countryIcon(country) {
   return country?.emoji || country?.flag || "🌍";
 }
 
+// Porter briefs are submitted under either the city name (e.g. "Kigali") or
+// the country name (e.g. "Rwanda") teams associate it with — match on both so
+// a brief doesn't silently fail to show up over a naming mismatch.
+export function briefMatchNames(country) {
+  const city = country?.cityA || country;
+  if (!city) return [];
+  const countryName = city.note?.split(" · ")[0]?.trim();
+  return [city.name, countryName].filter(Boolean);
+}
+
+export function findBriefForCountry(briefs, country) {
+  const names = briefMatchNames(country).map((n) => n.toLowerCase());
+  return briefs.find((b) => names.includes(b.country_name.toLowerCase()));
+}
+
 export function timeUntilDeparture() {
   const now = new Date();
   let years = DEPARTURE_DATE.getFullYear() - now.getFullYear();

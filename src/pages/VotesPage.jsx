@@ -4,7 +4,7 @@ import Globe from "react-globe.gl";
 import * as THREE from "three";
 import { COLORS, TRIP_DATE } from "../constants.js";
 import { ANCHOR_COUNTRIES, CITY_B_MAP } from "../data/cityData.js";
-import { getCountryByName, countryIcon, getInitialGlobeSize } from "../utils/voteUtils.js";
+import { getCountryByName, countryIcon, getInitialGlobeSize, findBriefForCountry } from "../utils/voteUtils.js";
 import { useAuth } from "../lib/AuthContext.jsx";
 import { fetchCountryBriefs } from "../lib/porterMemory.js";
 import { supabase } from "../lib/supabase.js";
@@ -1558,7 +1558,7 @@ function ConnectorBeam() {
 
 function FloatingIntelPanel({ country, ranked = [], votingOpen, onAddToBallot, onBack, onDeepDive, briefs = [], mobile = false }) {
   if (!country) return null;
-  const brief = briefs.find((b) => b.country_name.toLowerCase() === country.name.toLowerCase());
+  const brief = findBriefForCountry(briefs, country);
   const inBallot = ranked.includes(country.name);
   const ballotFull = ranked.length >= 3;
 
@@ -2260,7 +2260,7 @@ function DestinationConsole({ countries, activeCountry, winnerNames = [], ranked
           const active = activeCountry?.name === country.name;
           const finalist = winnerNames.includes(country.name);
           const onBallot = ranked.includes(country.name);
-          const hasBrief = briefs.some((b) => b.country_name.toLowerCase() === country.name.toLowerCase());
+          const hasBrief = Boolean(findBriefForCountry(briefs, country));
 
           return (
             <button

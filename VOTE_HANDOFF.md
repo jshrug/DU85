@@ -22,6 +22,7 @@ The visual voting mechanism is built. This brief is everything an agent needs to
 - `api/porter.js` — Porter already knows the ranked method and will explain it if asked.
 
 ## Step 1 (jshrug): run this once in the Supabase SQL editor
+_Post-review fix: `admins.id` is `uuid`, not `text` — the original draft cast `auth.uid()::text` against it, which throws `operator does not exist: uuid = text` and would have broken every admin action (open/close/reveal). Casts removed below. Also added `ballot_self_read` so a member's own ballot loads back in on return visits (RLS was hiding it from everyone, including its owner) — other members' ballots stay admin-only._
 ```sql
 create table if not exists cohort_ballots (
   id uuid primary key default gen_random_uuid(),
@@ -35,8 +36,9 @@ create table if not exists cohort_ballots (
 alter table cohort_ballots enable row level security;
 create policy ballot_write on cohort_ballots for insert with check (voter_id = auth.uid());
 create policy ballot_update on cohort_ballots for update using (voter_id = auth.uid()) with check (voter_id = auth.uid());
+create policy ballot_self_read on cohort_ballots for select using (voter_id = auth.uid());
 create policy ballot_admin_read on cohort_ballots for select
-  using (exists (select 1 from admins a where a.id = auth.uid()::text and a.enabled));
+  using (exists (select 1 from admins a where a.id = auth.uid() and a.enabled));
 
 create or replace function ballot_count(p_cohort text, p_round text)
   returns integer language sql security definer stable as $$
@@ -55,8 +57,11 @@ create table if not exists cohort_vote_status (
 alter table cohort_vote_status enable row level security;
 create policy status_read on cohort_vote_status for select using (true);
 create policy status_admin_write on cohort_vote_status for all
-  using (exists (select 1 from admins a where a.id = auth.uid()::text and a.enabled))
-  with check (exists (select 1 from admins a where a.id = auth.uid()::text and a.enabled));
+  using (exists (select 1 from admins a where a.id = auth.uid() and a.enabled))
+  with check (exists (select 1 from admins a where a.id = auth.uid() and a.enabled));
+
+-- Realtime updates for live status/results (matches the existing cohort_votes/cohort_state setup)
+alter publication supabase_realtime add table cohort_vote_status;
 ```
 
 ## Step 2 (agent): mount the ballot in the vote screen
