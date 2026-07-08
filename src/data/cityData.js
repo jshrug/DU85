@@ -565,7 +565,7 @@ export const COHORT_EVENTS = [
     title: "Open Office Hours",
     date: "Jul 8",
     fullDate: new Date("2026-07-08"),
-    detail: "8:00 – 8:45am. Open call to discuss destination options, voting, logistics, or anything else about the trip. No agenda — just show up with questions.",
+    detail: "8:00 – 8:45pm. Open call to discuss destination options, voting, logistics, or anything else about the trip. No agenda — just show up with questions.",
     badge: "Optional",
   },
   {
@@ -592,7 +592,7 @@ export const COHORT_EVENTS = [
     title: "Open Office Hours",
     date: "Jul 15",
     fullDate: new Date("2026-07-15"),
-    detail: "8:00 – 8:45am. Open call to discuss destination options, voting, logistics, or anything else about the trip. No agenda — just show up with questions.",
+    detail: "8:00 – 8:45pm. Open call to discuss destination options, voting, logistics, or anything else about the trip. No agenda — just show up with questions.",
     badge: "Optional",
   },
   {
