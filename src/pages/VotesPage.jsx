@@ -171,6 +171,7 @@ export default function VotesPage() {
         onOpen={() => adminAction(() => setVoteStatus("open"))}
         onClose={() => adminAction(closeAndTally)}
         onReopen={() => adminAction(() => setVoteStatus("open"))}
+        onNotOpen={() => adminAction(() => setVoteStatus("closed"))}
         briefs={briefs}
         finalists={finalists}
         showCelebration={showCelebration}
@@ -196,6 +197,7 @@ function DestinationChamber({
   onOpen,
   onClose,
   onReopen,
+  onNotOpen,
   briefs = [],
   finalists = [],
   showCelebration,
@@ -565,6 +567,7 @@ function DestinationChamber({
     onOpen,
     onClose,
     onReopen,
+    onNotOpen,
   };
 
   const intelPanelProps = {
@@ -790,6 +793,7 @@ function VotePanel({
   onOpen,
   onClose,
   onReopen,
+  onNotOpen,
   mobile = false,
 }) {
   return (
@@ -835,6 +839,7 @@ function VotePanel({
             onOpen={onOpen}
             onClose={onClose}
             onReopen={onReopen}
+            onNotOpen={onNotOpen}
           />
         )}
       </div>
@@ -1203,13 +1208,14 @@ function Results({ results }) {
 }
 
 /* ── Admin controls (jshrug only) ────────────────────────────────────────────── */
-function AdminBar({ status, busy, onOpen, onClose, onReopen }) {
-  const [confirm, setConfirm] = useState(null); // 'open' | 'close' | 'reopen'
-  const act = { open: onOpen, close: onClose, reopen: onReopen }[confirm];
+function AdminBar({ status, busy, onOpen, onClose, onReopen, onNotOpen }) {
+  const [confirm, setConfirm] = useState(null); // 'open' | 'close' | 'reopen' | 'notopen'
+  const act = { open: onOpen, close: onClose, reopen: onReopen, notopen: onNotOpen }[confirm];
   const copy = {
     open: `Open voting for all ${COHORT_SIZE} members?`,
     close: "Close voting and reveal the top 2? This tallies every ballot.",
     reopen: "Reopen voting? This lets members change their ballots again.",
+    notopen: "Set voting back to not open yet? Members can't vote and no results are revealed. Any ballots already cast are kept.",
   }[confirm];
 
   return (
@@ -1220,6 +1226,7 @@ function AdminBar({ status, busy, onOpen, onClose, onReopen }) {
       <div className="flex gap-2 flex-wrap">
         {status !== "open" && <AdminBtn label="Open voting" onClick={() => setConfirm("open")} disabled={busy} />}
         {status === "open" && <AdminBtn label="Close & reveal top 2" onClick={() => setConfirm("close")} disabled={busy} primary />}
+        {status === "open" && onNotOpen && <AdminBtn label="Revert to not open yet" onClick={() => setConfirm("notopen")} disabled={busy} />}
         {status === "final" && <AdminBtn label="Reopen voting" onClick={() => setConfirm("reopen")} disabled={busy} />}
       </div>
       {confirm && (
