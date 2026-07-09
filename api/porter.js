@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { HEALTH_BRIEF_META, HEALTH_BRIEF_MARKDOWN } from "../src/data/healthBrief.js";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -423,14 +424,25 @@ Watch: National Geographic episode on Singapore's economy and innovation, coveri
   },
 ];
 
+// Cohort-wide health brief — always available to Porter, for every city.
+const HEALTH_SECTION = `\n\n──────────────────────────────────────────────
+HEALTH & VACCINATION REFERENCE (COHORT-WIDE, ALL CITIES)
+──────────────────────────────────────────────
+${HEALTH_BRIEF_META.intro}
+
+This applies to every City A / City B option, not just one country. When a student asks about vaccines, malaria, yellow fever, or health prep for any destination, use this table. Always add that requirements change and must be confirmed with a travel clinic and the CDC/embassy closer to travel (per the SAFETY rules above).
+
+${HEALTH_BRIEF_MARKDOWN}`;
+
 export function buildSystemWithBriefs(briefs) {
+  const base = SYSTEM + HEALTH_SECTION;
   const all = [...BUILTIN_BRIEFS, ...(Array.isArray(briefs) ? briefs : [])];
-  if (all.length === 0) return SYSTEM;
+  if (all.length === 0) return base;
   const briefsSection = all.map((b) => {
     const team = b.team_members ? ` (Team: ${b.team_members})` : "";
     return `COUNTRY: ${b.country_name}${team}\nSubmitted: ${new Date(b.submitted_at).toLocaleDateString()}\n\n${b.content}`;
   }).join("\n\n---\n\n");
-  return `${SYSTEM}\n\nSUBMITTED COUNTRY BRIEFS (${all.length} brief${all.length !== 1 ? "s" : ""} received so far):\n\n${briefsSection}`;
+  return `${base}\n\nSUBMITTED COUNTRY BRIEFS (${all.length} brief${all.length !== 1 ? "s" : ""} received so far):\n\n${briefsSection}`;
 }
 
 export default async function handler(req, res) {

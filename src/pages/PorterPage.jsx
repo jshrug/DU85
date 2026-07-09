@@ -11,6 +11,7 @@ import { useAuth } from "../lib/AuthContext.jsx";
 import { fetchCountryBriefs, submitCountryBrief, loadConversation, saveConversation } from "../lib/porterMemory.js";
 import { supabase, COHORT_ID, getOrCreateUserId } from "../lib/supabase.js";
 import { DEEP_DIVE } from "../data/countryDeepDive.js";
+import { HEALTH_BRIEF_META, HEALTH_ROWS } from "../data/healthBrief.js";
 import {
   getFreshnessLabel,
   getCohortsForCity,
@@ -634,6 +635,110 @@ function BriefField({ label, children }) {
   );
 }
 
+// Cohort-wide health & vaccination reference — pinned, not tied to any one country.
+function HealthBrief() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div
+      className="relative rounded-[1.8rem] overflow-hidden"
+      style={{ background: "rgba(4,3,1,0.68)", border: "1px solid rgba(196,150,42,0.16)" }}
+    >
+      <div
+        className="h-px"
+        style={{ background: "linear-gradient(90deg, transparent, rgba(196,150,42,0.52), rgba(243,213,138,0.72), rgba(196,150,42,0.52), transparent)" }}
+      />
+
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="w-full text-left px-5 pt-5 pb-4 flex items-start justify-between gap-4"
+      >
+        <div className="min-w-0">
+          <p
+            className="text-[8px] uppercase tracking-[0.38em] font-black mb-1"
+            style={{ color: "rgba(196,150,42,0.44)" }}
+          >
+            Global 85 · Cohort-wide · Everyone
+          </p>
+          <h2
+            className="text-xl font-black"
+            style={{ fontFamily: "Georgia, serif", color: "rgba(255,255,255,0.88)" }}
+          >
+            {HEALTH_BRIEF_META.title}
+          </h2>
+          <p className="text-[11px] text-white/38 mt-1 leading-4">
+            {HEALTH_BRIEF_META.scope} · Porter has this for every city
+          </p>
+        </div>
+        <div
+          className="shrink-0 w-12 h-12 rounded-full flex items-center justify-center mt-0.5"
+          style={{ border: "2px solid rgba(196,150,42,0.28)", background: "rgba(196,150,42,0.06)" }}
+        >
+          <span
+            className="text-[10px] font-black transition-transform"
+            style={{ color: COLORS.champagne, transform: open ? "rotate(180deg)" : "none" }}
+          >
+            ▾
+          </span>
+        </div>
+      </button>
+
+      {open && (
+        <div className="px-5 pb-5">
+          <p className="text-[11px] text-white/44 leading-[1.6] mb-3">
+            {HEALTH_BRIEF_META.intro}
+          </p>
+          <div
+            className="overflow-x-auto rounded-xl chamber-scrollbar"
+            style={{ border: "1px solid rgba(196,150,42,0.14)" }}
+          >
+            <table className="w-full text-left" style={{ borderCollapse: "collapse", minWidth: 560 }}>
+              <thead>
+                <tr>
+                  {["City", "Yellow Fever", "Malaria", "Vaccines / Health", "Special Notes"].map((h) => (
+                    <th
+                      key={h}
+                      className="text-[8px] uppercase tracking-[0.14em] font-black px-3 py-2.5 whitespace-nowrap"
+                      style={{
+                        color: "rgba(243,213,138,0.62)",
+                        background: "rgba(196,150,42,0.08)",
+                        borderBottom: "1px solid rgba(196,150,42,0.22)",
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {HEALTH_ROWS.map((r, i) => (
+                  <tr
+                    key={r.city}
+                    style={{ background: i % 2 ? "rgba(255,255,255,0.018)" : "transparent" }}
+                  >
+                    <td
+                      className="text-[11px] font-black px-3 py-2.5 align-top"
+                      style={{ color: "rgba(255,255,255,0.86)", borderBottom: "1px solid rgba(255,255,255,0.05)" }}
+                    >
+                      {r.city}
+                    </td>
+                    <td className="text-[10px] px-3 py-2.5 align-top text-white/56" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>{r.yellowFever}</td>
+                    <td className="text-[10px] px-3 py-2.5 align-top text-white/56" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>{r.malaria}</td>
+                    <td className="text-[10px] px-3 py-2.5 align-top text-white/56" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>{r.vaccines}</td>
+                    <td className="text-[10px] px-3 py-2.5 align-top text-white/56" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>{r.notes}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-[8px] uppercase tracking-[0.18em] mt-2.5 ml-0.5" style={{ color: "rgba(255,255,255,0.24)" }}>
+            Source: {HEALTH_BRIEF_META.source} · Not medical advice — verify closer to travel
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function CountryBriefTab({ briefs, onBriefSubmitted, prefillCountry = "", prefillTeam = "", viewCountry = "" }) {
   const [countryName, setCountryName] = useState("");
   const [teamMembers, setTeamMembers] = useState("");
@@ -764,6 +869,9 @@ function CountryBriefTab({ briefs, onBriefSubmitted, prefillCountry = "", prefil
 
   return (
     <div className="px-5 flex flex-col gap-4">
+      {/* Cohort-wide health reference — always available to everyone */}
+      <HealthBrief />
+
       {/* Brief form */}
       <div
         ref={formRef}
