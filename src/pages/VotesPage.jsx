@@ -29,8 +29,9 @@ import {
 
 const PdfViewerModal = lazy(() => import("../components/features/PdfViewerModal.jsx"));
 
-// The 8 City A candidates come from ANCHOR_COUNTRIES — the same source the globe
+// City A candidates come from ANCHOR_COUNTRIES — the same source the globe
 // uses to place its points, so the chamber keeps showing every candidate.
+// Post-vote, this holds just the 2 finalists (Nairobi, Istanbul) moving into City B.
 const RANK_LABELS = ["First choice", "Second choice", "Third choice"];
 const CITIES = ANCHOR_COUNTRIES.map((c) => ({
   name: c.name,
@@ -216,7 +217,7 @@ function DestinationChamber({
     () => typeof window !== "undefined" && window.innerWidth < 768
   );
 
-  // The 8 City A candidates — always shown on the globe.
+  // City A candidates — always shown on the globe.
   const countries = ANCHOR_COUNTRIES;
   const votingOpen = status === "open";
   const winnerNames = useMemo(
