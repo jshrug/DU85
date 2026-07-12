@@ -6,7 +6,6 @@ export const CITY_CHAMPIONS = {
   "Nairobi + Istanbul":   null,
   "Nairobi + Kigali":     null,
   "Nairobi + Cape Town":  null,
-  "Istanbul + Nairobi":   null,
   "Istanbul + Budapest":  null,
   "Istanbul + Belgrade":  null,
   "Istanbul + Tunis":     null,
@@ -167,7 +166,7 @@ export const COMPANION_CITIES = [
 ];
 
 export const CITY_B_MAP = {
-  "Istanbul": ["Nairobi", "Budapest", "Belgrade", "Tunis", "Warsaw"],
+  "Istanbul": ["Budapest", "Belgrade", "Tunis", "Warsaw"],
   "Nairobi": ["Mumbai", "Istanbul", "Kigali", "Cape Town"],
 };
 
