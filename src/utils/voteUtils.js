@@ -79,14 +79,37 @@ export function buildCombos(finalists) {
   return combos;
 }
 
+// Build the City B candidate list for the combo round: one entry per City B
+// destination (deduped), carrying its City A anchor as `.cityA` for display
+// underneath, and `.comboName` ("<City A> + <City B>") for brief matching —
+// champion teams submit briefs under the full combo name, not the bare city.
+export function buildCityBCandidates(anchors) {
+  const seen = new Set();
+  const list = [];
+  anchors.forEach((cityA) => {
+    (CITY_B_MAP[cityA.name] || []).forEach((bName) => {
+      if (seen.has(bName)) return;
+      seen.add(bName);
+      const cityB = getCountryByName(bName);
+      if (!cityB) return;
+      list.push({ ...cityB, cityA, comboName: `${cityA.name} + ${bName}` });
+    });
+  });
+  return list;
+}
+
 export function countryIcon(country) {
   return country?.emoji || country?.flag || "🌍";
 }
 
-// Porter briefs are submitted under either the city name (e.g. "Kigali") or
-// the country name (e.g. "Rwanda") teams associate it with — match on both so
-// a brief doesn't silently fail to show up over a naming mismatch.
+// Porter briefs are submitted under the full combo name ("<City A> + <City B>")
+// for City B candidates (see buildCityBCandidates), or under either the city
+// name (e.g. "Kigali") or the country name (e.g. "Rwanda") teams associate it
+// with for a plain City A country — match on both so a brief doesn't silently
+// fail to show up over a naming mismatch.
 export function briefMatchNames(country) {
+  if (!country) return [];
+  if (country.comboName) return [country.comboName];
   const city = country?.cityA || country;
   if (!city) return [];
   const countryName = city.note?.split(" · ")[0]?.trim();

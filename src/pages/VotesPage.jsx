@@ -3,8 +3,8 @@ import { useNavigate } from "react-router-dom";
 import Globe from "react-globe.gl";
 import * as THREE from "three";
 import { COLORS, COHORT_SIZE, TRIP_DATE } from "../constants.js";
-import { ANCHOR_COUNTRIES, CITY_B_MAP } from "../data/cityData.js";
-import { getCountryByName, countryIcon, getInitialGlobeSize, findBriefForCountry } from "../utils/voteUtils.js";
+import { ANCHOR_COUNTRIES } from "../data/cityData.js";
+import { getCountryByName, countryIcon, getInitialGlobeSize, findBriefForCountry, buildCityBCandidates } from "../utils/voteUtils.js";
 import { useAuth } from "../lib/AuthContext.jsx";
 import { fetchCountryBriefs } from "../lib/porterMemory.js";
 import { supabase } from "../lib/supabase.js";
@@ -25,18 +25,20 @@ import {
   fetchVotedCount,
   setVoteStatus,
   closeAndTally,
-} from "../lib/vote.js";
+} from "../lib/comboVote.js";
 
 const PdfViewerModal = lazy(() => import("../components/features/PdfViewerModal.jsx"));
 
-// City A candidates come from ANCHOR_COUNTRIES — the same source the globe
-// uses to place its points, so the chamber keeps showing every candidate.
-// Post-vote, this holds just the 2 finalists (Nairobi, Istanbul) moving into City B.
+// City B candidates are the votable selection now — Nairobi/Istanbul already
+// locked as City A finalists, so each row here is one City B destination
+// carrying its connecting City A anchor (.cityA) for display underneath.
 const RANK_LABELS = ["First choice", "Second choice", "Third choice"];
-const CITIES = ANCHOR_COUNTRIES.map((c) => ({
+const CITY_B_CANDIDATES = buildCityBCandidates(ANCHOR_COUNTRIES);
+const CITIES = CITY_B_CANDIDATES.map((c) => ({
   name: c.name,
   emoji: c.emoji || "🌐",
   note: c.note || c.region || "",
+  cityA: c.cityA,
 }));
 const cityByName = (n) => CITIES.find((c) => c.name === n);
 
@@ -153,11 +155,6 @@ export default function VotesPage() {
     }
   }, []);
 
-  const finalists = useMemo(() => {
-    if (status !== "final" || !results?.top2) return [];
-    return results.top2.map(getCountryByName).filter(Boolean);
-  }, [status, results]);
-
   return (
     <main className="fixed inset-0 z-[999] overflow-hidden">
       <DestinationChamber
@@ -174,7 +171,6 @@ export default function VotesPage() {
         onReopen={() => adminAction(() => setVoteStatus("open"))}
         onNotOpen={() => adminAction(() => setVoteStatus("closed"))}
         briefs={briefs}
-        finalists={finalists}
         showCelebration={showCelebration}
         onDismissCelebration={() => setShowCelebration(false)}
       />
@@ -200,7 +196,6 @@ function DestinationChamber({
   onReopen,
   onNotOpen,
   briefs = [],
-  finalists = [],
   showCelebration,
   onDismissCelebration,
 }) {
@@ -217,13 +212,30 @@ function DestinationChamber({
     () => typeof window !== "undefined" && window.innerWidth < 768
   );
 
-  // City A candidates — always shown on the globe.
-  const countries = ANCHOR_COUNTRIES;
+  // City B candidates — always shown on the globe, each with its connecting City A.
+  const countries = CITY_B_CANDIDATES;
   const votingOpen = status === "open";
-  const winnerNames = useMemo(
-    () => (status === "final" && results?.top2 ? results.top2 : []),
-    [status, results]
-  );
+  const winnerNames = useMemo(() => {
+    if (status !== "final" || !results) return [];
+    if (results.needsRunoff) return [results.winner, results.runnerUp].filter(Boolean);
+    return results.winner ? [results.winner] : [];
+  }, [status, results]);
+
+  // Locked-combo info for the celebration overlay: either a single winning
+  // City A + City B pairing, or (if the top two were within 3 points) the
+  // pair of contenders heading to a runoff.
+  const lockedInfo = useMemo(() => {
+    if (status !== "final" || !results) return null;
+    if (results.needsRunoff) {
+      const contenders = [results.winner, results.runnerUp]
+        .filter(Boolean)
+        .map((n) => countries.find((c) => c.name === n))
+        .filter(Boolean);
+      return contenders.length === 2 ? { needsRunoff: true, contenders } : null;
+    }
+    const winner = countries.find((c) => c.name === results.winner);
+    return winner ? { needsRunoff: false, winner, cityA: winner.cityA } : null;
+  }, [status, results, countries]);
 
   // Lifted ballot state so both the ranked panel and the intel panel can add cities.
   const [ranked, setRanked] = useState([]);
@@ -467,35 +479,45 @@ function DestinationChamber({
   }, [activeCountry, countries, winnerNames]);
 
   const arcs = useMemo(() => {
-    // Final: arc between the two winning cities.
-    if (winnerNames.length === 2) {
-      const [a, b] = winnerNames.map(getCountryByName);
-      if (a && b)
-        return [
-          {
-            startLat: a.lat,
-            startLng: a.lng,
-            endLat: b.lat,
-            endLng: b.lng,
-            label: `${a.name} + ${b.name}`,
-          },
-        ];
+    // Final, single winner: arc the winning City B to its City A anchor — the locked combo.
+    if (!lockedInfo?.needsRunoff && lockedInfo?.winner && lockedInfo?.cityA) {
+      const { winner, cityA } = lockedInfo;
+      return [
+        {
+          startLat: winner.lat,
+          startLng: winner.lng,
+          endLat: cityA.lat,
+          endLng: cityA.lng,
+          label: `${cityA.name} + ${winner.name}`,
+        },
+      ];
     }
-    // Exploring: arc the active city to its City B options.
+    // Runoff pending: arc between the two contenders.
+    if (lockedInfo?.needsRunoff && lockedInfo.contenders?.length === 2) {
+      const [a, b] = lockedInfo.contenders;
+      return [
+        {
+          startLat: a.lat,
+          startLng: a.lng,
+          endLat: b.lat,
+          endLng: b.lng,
+          label: `${a.name} vs ${b.name}`,
+        },
+      ];
+    }
+    // Exploring: arc the active City B to its connecting City A.
     const source = activeCountry;
-    if (!source) return [];
-    const bNames = CITY_B_MAP[source.name] || [];
-    return bNames
-      .map((name) => getCountryByName(name))
-      .filter(Boolean)
-      .map((bCity) => ({
+    if (!source?.cityA) return [];
+    return [
+      {
         startLat: source.lat,
         startLng: source.lng,
-        endLat: bCity.lat,
-        endLng: bCity.lng,
-        label: bCity.name,
-      }));
-  }, [activeCountry, winnerNames]);
+        endLat: source.cityA.lat,
+        endLng: source.cityA.lng,
+        label: source.cityA.name,
+      },
+    ];
+  }, [activeCountry, lockedInfo]);
 
   const activeContinent = useMemo(() => {
     if (!activeCountry || !worldGeoData.features.length) return null;
@@ -690,6 +712,7 @@ function DestinationChamber({
             countries={countries}
             activeCountry={activeCountry}
             winnerNames={winnerNames}
+            needsRunoff={Boolean(lockedInfo?.needsRunoff)}
             ranked={ranked}
             onSelectCountry={handlePointClick}
             briefs={briefs}
@@ -713,6 +736,7 @@ function DestinationChamber({
             countries={countries}
             activeCountry={activeCountry}
             winnerNames={winnerNames}
+            needsRunoff={Boolean(lockedInfo?.needsRunoff)}
             ranked={ranked}
             onSelectCountry={handlePointClick}
             briefs={briefs}
@@ -722,8 +746,8 @@ function DestinationChamber({
 
       {deepDiveCountry && <DeepDivePanel country={deepDiveCountry} onClose={closeDeepDive} />}
 
-      {showCelebration && finalists.length === 2 && (
-        <FinalistsLockedOverlay finalists={finalists} onDismiss={onDismissCelebration} />
+      {showCelebration && lockedInfo && (
+        <FinalistsLockedOverlay info={lockedInfo} onDismiss={onDismissCelebration} />
       )}
     </section>
   );
@@ -736,7 +760,7 @@ function ChamberHud({ status, votedCount, results }) {
       ? { text: votedCount > 0 ? `Voting open · ${votedCount} in` : "Voting open", tone: "#E8B84B" }
       : status === "final"
         ? { text: `Closed · ${results?.ballotCount || 0} ballots`, tone: COLORS.champagneLight }
-        : { text: "Opens July 10", tone: "rgba(255,255,255,0.6)" };
+        : { text: "Opens July 18", tone: "rgba(255,255,255,0.6)" };
 
   return (
     <div
@@ -756,7 +780,7 @@ function ChamberHud({ status, votedCount, results }) {
               style={{ background: pill.tone, boxShadow: `0 0 12px ${pill.tone}` }}
             />
             <p className="text-[9px] uppercase tracking-[0.28em] font-black" style={{ color: "#FFD880" }}>
-              Global 85 · City A
+              Global 85 · City B
             </p>
           </div>
           <h1 className="mt-1 truncate text-base font-black sm:text-xl" style={{ fontFamily: "Georgia, serif" }}>
@@ -934,7 +958,7 @@ function RankBallot({ cities, ranked, setRanked, onSubmit, votedCount, submitted
       )}
 
       <p className="text-sm text-white/55 leading-6 mb-4">
-        Drag your favorites into order, or tap to add them. First choice at the top. The two cities the cohort ranks highest advance.
+        Drag your favorites into order, or tap to add them. First choice at the top. The highest-scoring City B pairing wins outright — unless the top two finish within 3 points, which triggers a runoff.
       </p>
 
       <p className="text-[10px] uppercase tracking-[0.2em] font-black mb-2.5" style={{ color: "rgba(196,150,42,0.6)" }}>
@@ -975,6 +999,7 @@ function RankBallot({ cities, ranked, setRanked, onSubmit, votedCount, submitted
                   <div className="truncate">
                     <span className="text-lg mr-1">{c.emoji}</span>
                     <span className="font-bold text-white">{c.name}</span>
+                    {c.cityA && <span className="ml-1.5 text-[10px] font-semibold text-white/35">+ {c.cityA.name}</span>}
                   </div>
                 ) : (
                   <div className="text-sm text-white/30">Empty — tap a city below</div>
@@ -1030,6 +1055,7 @@ function RankBallot({ cities, ranked, setRanked, onSubmit, votedCount, submitted
               <span className="text-xl shrink-0">{c.emoji}</span>
               <span className="min-w-0">
                 <span className="block text-[13px] font-bold text-white leading-tight truncate">{c.name}</span>
+                {c.cityA && <span className="block text-[10px] font-semibold text-white/35 truncate">+ {c.cityA.name}</span>}
               </span>
             </button>
           );
@@ -1081,6 +1107,7 @@ function RankBallot({ cities, ranked, setRanked, onSubmit, votedCount, submitted
                     </span>
                     <span className="text-lg">{c?.emoji}</span>
                     <span className="font-bold text-white">{n}</span>
+                    {c?.cityA && <span className="text-[10px] font-semibold text-white/35">+ {c.cityA.name}</span>}
                   </div>
                 );
               })}
@@ -1118,60 +1145,97 @@ function NotOpenYet() {
     <div className="text-center py-4">
       <div className="text-4xl mb-3">🗳️</div>
       <h2 className="text-xl font-black mb-2" style={{ fontFamily: "Georgia, serif" }}>
-        Voting opens July 10
+        Voting opens July 18
       </h2>
       <p className="text-sm text-white/55 leading-6">
-        The City A vote happens live in class. When it opens, you'll rank your top 3 cities right here. The two cities the cohort ranks highest advance. Explore the candidates on the globe while you wait.
+        The City B combo vote happens live in class. When it opens, you'll rank your top 3 City B picks right here — each one pairs with its connecting City A. The highest-scoring pairing wins outright, unless the top two finish within 3 points, which triggers a runoff. Explore the candidates on the globe while you wait.
       </p>
     </div>
   );
 }
 
-/* ── Results: top 2 finalists + expandable 3/2/1 scoreboard ──────────────────── */
+/* ── Results: single winning combo (or a runoff notice) + expandable tally ──── */
 function Results({ results }) {
   const [showTally, setShowTally] = useState(false);
-  const top2 = results.top2 || [];
   const ranked = results.ranked || [];
+  const needsRunoff = Boolean(results.needsRunoff);
+  const winnerRow = ranked.find((r) => r.city === results.winner);
+  const runnerUpRow = ranked.find((r) => r.city === results.runnerUp);
+
   return (
     <div>
       <p className="text-center text-[10px] uppercase tracking-[0.3em] font-black mb-4" style={{ color: "rgba(70,192,147,0.7)" }}>
         Voting closed · {results.ballotCount || 0} ballots
       </p>
-      <p className="text-center text-sm text-white/55 mb-4">The two cities advancing to the next round:</p>
-      <div className="grid gap-3 mb-6">
-        {top2.map((name, i) => {
-          const c = cityByName(name);
-          const row = ranked.find((r) => r.city === name);
-          return (
-            <div
-              key={name}
-              className="flex items-center gap-4 rounded-2xl p-4"
-              style={{ background: "linear-gradient(150deg, rgba(196,150,42,0.14), rgba(0,0,0,0.2))", border: "1px solid rgba(243,213,138,0.3)" }}
-            >
-              <div className="text-3xl">{c?.emoji}</div>
-              <div className="flex-1">
-                <div className="text-[9px] uppercase tracking-[0.2em] font-black" style={{ color: "rgba(243,213,138,0.6)" }}>
-                  Finalist {i + 1}
-                </div>
-                <div className="text-lg font-black text-white">{name}</div>
-              </div>
-              {row && (
-                <div className="text-right">
-                  <div className="text-2xl font-black tabular-nums" style={{ color: COLORS.champagneLight }}>
-                    {row.points}
-                  </div>
-                  <div className="text-[8px] uppercase tracking-wide text-white/35">points</div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
 
-      {results.tieForSecond && (
-        <p className="text-[11px] text-center mb-4 font-bold" style={{ color: COLORS.ember }}>
-          Note: the 2nd finalist was a tie on points and first-choice votes. The host will confirm the result.
-        </p>
+      {needsRunoff ? (
+        <>
+          <p className="text-center text-sm text-white/55 mb-4">
+            Top two finished within 3 points — a runoff will decide the winning pairing:
+          </p>
+          <div className="grid gap-3 mb-6">
+            {[results.winner, results.runnerUp].filter(Boolean).map((name, i) => {
+              const c = cityByName(name);
+              const row = i === 0 ? winnerRow : runnerUpRow;
+              return (
+                <div
+                  key={name}
+                  className="flex items-center gap-4 rounded-2xl p-4"
+                  style={{ background: "linear-gradient(150deg, rgba(198,90,46,0.14), rgba(0,0,0,0.2))", border: "1px solid rgba(232,120,60,0.3)" }}
+                >
+                  <div className="text-3xl">{countryIcon(c)}</div>
+                  <div className="flex-1">
+                    <div className="text-[9px] uppercase tracking-[0.2em] font-black" style={{ color: "rgba(243,213,138,0.6)" }}>
+                      {c?.cityA?.name} + {name}
+                    </div>
+                  </div>
+                  {row && (
+                    <div className="text-right">
+                      <div className="text-2xl font-black tabular-nums" style={{ color: COLORS.champagneLight }}>
+                        {row.points}
+                      </div>
+                      <div className="text-[8px] uppercase tracking-wide text-white/35">points</div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="text-center text-sm text-white/55 mb-4">The winning pairing:</p>
+          <div className="grid gap-3 mb-6">
+            {results.winner &&
+              (() => {
+                const c = cityByName(results.winner);
+                return (
+                  <div
+                    className="flex items-center gap-4 rounded-2xl p-4"
+                    style={{ background: "linear-gradient(150deg, rgba(196,150,42,0.14), rgba(0,0,0,0.2))", border: "1px solid rgba(243,213,138,0.3)" }}
+                  >
+                    <div className="text-3xl">{countryIcon(c)}</div>
+                    <div className="flex-1">
+                      <div className="text-[9px] uppercase tracking-[0.2em] font-black" style={{ color: "rgba(243,213,138,0.6)" }}>
+                        Winner
+                      </div>
+                      <div className="text-lg font-black text-white">
+                        {c?.cityA?.name} + {results.winner}
+                      </div>
+                    </div>
+                    {winnerRow && (
+                      <div className="text-right">
+                        <div className="text-2xl font-black tabular-nums" style={{ color: COLORS.champagneLight }}>
+                          {winnerRow.points}
+                        </div>
+                        <div className="text-[8px] uppercase tracking-wide text-white/35">points</div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+          </div>
+        </>
       )}
 
       <button
@@ -1192,7 +1256,10 @@ function Results({ results }) {
               >
                 <span className="text-[10px] tabular-nums text-white/35 w-4">{i + 1}</span>
                 <span className="text-base">{c?.emoji}</span>
-                <span className="flex-1 text-sm font-bold text-white/85">{r.city}</span>
+                <span className="flex-1 text-sm font-bold text-white/85 truncate">
+                  {r.city}
+                  {c?.cityA && <span className="text-white/35 font-medium"> + {c.cityA.name}</span>}
+                </span>
                 <span className="text-sm font-black tabular-nums" style={{ color: COLORS.champagneLight }}>
                   {r.points} pts
                 </span>
@@ -1200,7 +1267,7 @@ function Results({ results }) {
             );
           })}
           <p className="text-[9px] text-white/30 px-4 py-2.5" style={{ borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-            Scoring: 1st choice = 3 pts, 2nd = 2, 3rd = 1. Ties broken by most first-choice votes.
+            Scoring: 1st choice = 3 pts, 2nd = 2, 3rd = 1. One winner locks the route — unless the top two are within 3 points, which triggers a runoff.
           </p>
         </div>
       )}
@@ -1214,7 +1281,7 @@ function AdminBar({ status, busy, onOpen, onClose, onReopen, onNotOpen }) {
   const act = { open: onOpen, close: onClose, reopen: onReopen, notopen: onNotOpen }[confirm];
   const copy = {
     open: `Open voting for all ${COHORT_SIZE} members?`,
-    close: "Close voting and reveal the top 2? This tallies every ballot.",
+    close: "Close voting and reveal the winning pairing? This tallies every ballot.",
     reopen: "Reopen voting? This lets members change their ballots again.",
     notopen: "Set voting back to not open yet? Members can't vote and no results are revealed. Any ballots already cast are kept.",
   }[confirm];
@@ -1226,7 +1293,7 @@ function AdminBar({ status, busy, onOpen, onClose, onReopen, onNotOpen }) {
       </p>
       <div className="flex gap-2 flex-wrap">
         {status !== "open" && <AdminBtn label="Open voting" onClick={() => setConfirm("open")} disabled={busy} />}
-        {status === "open" && <AdminBtn label="Close & reveal top 2" onClick={() => setConfirm("close")} disabled={busy} primary />}
+        {status === "open" && <AdminBtn label="Close & reveal winner" onClick={() => setConfirm("close")} disabled={busy} primary />}
         {status === "open" && onNotOpen && <AdminBtn label="Revert to not open yet" onClick={() => setConfirm("notopen")} disabled={busy} />}
         {status === "final" && <AdminBtn label="Reopen voting" onClick={() => setConfirm("reopen")} disabled={busy} />}
       </div>
@@ -1625,7 +1692,7 @@ function FloatingIntelPanel({ country, ranked = [], votingOpen, onAddToBallot, o
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-[10px] uppercase tracking-[0.26em] font-black" style={{ color: "#FFD880" }}>
-              Target acquired · City A
+              Target acquired · City B
             </p>
             <h2 className="mt-1 truncate text-3xl font-black leading-none sm:text-4xl" style={{ fontFamily: "Georgia, serif" }}>
               {country.name}
@@ -1633,6 +1700,15 @@ function FloatingIntelPanel({ country, ranked = [], votingOpen, onAddToBallot, o
             <p className="mt-2 truncate text-sm text-white/48">
               {country.region} · {country.note}
             </p>
+            {country.cityA && (
+              <span
+                className="mt-2 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase tracking-[0.1em]"
+                style={{ background: "rgba(196,150,42,0.10)", borderColor: "rgba(196,150,42,0.24)", color: "#FFD880" }}
+              >
+                <span>{countryIcon(country.cityA)}</span>
+                Pairs with {country.cityA.name}
+              </span>
+            )}
           </div>
         </div>
 
@@ -1792,21 +1868,18 @@ function FloatingIntelPanel({ country, ranked = [], votingOpen, onAddToBallot, o
             );
           })()}
 
-        {CITY_B_MAP[country.name]?.length > 0 && (
+        {country.cityA && (
           <div className="mt-4 rounded-3xl border border-white/10 bg-black/30 p-4">
             <p className="text-xs uppercase tracking-[0.18em] font-black" style={{ color: COLORS.champagne }}>
-              City B options
+              Connecting City A
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
-              {CITY_B_MAP[country.name].map((name) => (
-                <span
-                  key={name}
-                  className="rounded-full border px-3 py-1 text-xs font-bold"
-                  style={{ background: "rgba(255,255,255,0.05)", borderColor: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.62)" }}
-                >
-                  {name}
-                </span>
-              ))}
+              <span
+                className="rounded-full border px-3 py-1 text-xs font-bold"
+                style={{ background: "rgba(255,255,255,0.05)", borderColor: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.62)" }}
+              >
+                {countryIcon(country.cityA)} {country.cityA.name}
+              </span>
             </div>
           </div>
         )}
@@ -1884,7 +1957,7 @@ function DeepDivePanel({ country, onClose }) {
           </button>
           <div className="flex-1 min-w-0">
             <div className="text-[9px] uppercase tracking-[0.3em] font-black" style={{ color: "rgba(243,213,138,0.55)" }}>
-              Deep Dive · City A
+              Deep Dive · City B
             </div>
             <div className="text-lg font-black truncate" style={{ fontFamily: "Georgia, serif" }}>
               {countryIcon(country)} {country.name}
@@ -1958,21 +2031,18 @@ function DeepDivePanel({ country, onClose }) {
             </div>
           )}
 
-          {CITY_B_MAP[country.name]?.length > 0 && (
+          {country.cityA && (
             <div>
               <div className="text-[10px] uppercase tracking-[0.26em] font-black mb-3" style={{ color: "#FFD880" }}>
-                City B add-on options
+                Connecting City A
               </div>
               <div className="flex flex-wrap gap-2">
-                {CITY_B_MAP[country.name].map((name) => (
-                  <span
-                    key={name}
-                    className="rounded-full border px-3 py-1.5 text-xs font-bold"
-                    style={{ background: "rgba(255,255,255,0.05)", borderColor: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.65)" }}
-                  >
-                    {name}
-                  </span>
-                ))}
+                <span
+                  className="rounded-full border px-3 py-1.5 text-xs font-bold"
+                  style={{ background: "rgba(255,255,255,0.05)", borderColor: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.65)" }}
+                >
+                  {countryIcon(country.cityA)} {country.cityA.name}
+                </span>
               </div>
             </div>
           )}
@@ -2166,13 +2236,15 @@ function DeepDiveStat({ icon, label, value }) {
   );
 }
 
-/* ── Celebration overlay: the two finalists locked ───────────────────────────── */
-function FinalistsLockedOverlay({ finalists, onDismiss }) {
-  const [a, b] = finalists;
+/* ── Celebration overlay: combo locked, or a runoff triggered ────────────────── */
+function FinalistsLockedOverlay({ info, onDismiss }) {
+  const runoff = info.needsRunoff;
+  const [a, b] = runoff ? info.contenders : [];
+
   return (
     <div className="absolute inset-0 z-[200] flex items-center justify-center celebration-enter">
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
-      <ConfettiLayer />
+      {!runoff && <ConfettiLayer />}
 
       <div
         className="relative z-10 mx-5 max-w-md w-full rounded-[2rem] overflow-hidden border"
@@ -2190,29 +2262,50 @@ function FinalistsLockedOverlay({ finalists, onDismiss }) {
             style={{ borderColor: "rgba(243,213,138,0.30)", color: "#FFD880", background: "rgba(196,150,42,0.08)" }}
           >
             <span className="h-1.5 w-1.5 rounded-full bg-[#E8B84B] animate-pulse" />
-            Finalists locked
+            {runoff ? "Runoff triggered" : "Combo locked"}
           </div>
 
-          <h1 className="text-5xl font-black" style={{ fontFamily: "Georgia, serif", color: COLORS.champagneLight }}>
-            {countryIcon(a)}
-          </h1>
-          <h1 className="text-5xl font-black mt-1" style={{ fontFamily: "Georgia, serif", color: COLORS.champagneLight }}>
-            {countryIcon(b)}
-          </h1>
+          {runoff ? (
+            <>
+              <div className="flex items-center justify-center gap-3">
+                <h1 className="text-4xl font-black" style={{ fontFamily: "Georgia, serif", color: COLORS.champagneLight }}>
+                  {countryIcon(a)}
+                </h1>
+                <span className="text-lg text-white/40">vs</span>
+                <h1 className="text-4xl font-black" style={{ fontFamily: "Georgia, serif", color: COLORS.champagneLight }}>
+                  {countryIcon(b)}
+                </h1>
+              </div>
+              <div className="mt-4">
+                <div className="text-xl font-black" style={{ fontFamily: "Georgia, serif" }}>
+                  {a.cityA?.name} + {a.name}
+                </div>
+                <div className="text-sm text-white/40 my-1">vs</div>
+                <div className="text-xl font-black" style={{ fontFamily: "Georgia, serif" }}>
+                  {b.cityA?.name} + {b.name}
+                </div>
+              </div>
+              <p className="mt-5 text-sm text-white/60 leading-6">
+                Too close to call — the top two pairings finished within 3 points of each other. A runoff will decide the winner.
+              </p>
+            </>
+          ) : (
+            <>
+              <h1 className="text-5xl font-black" style={{ fontFamily: "Georgia, serif", color: COLORS.champagneLight }}>
+                {countryIcon(info.winner)}
+              </h1>
 
-          <div className="mt-4">
-            <div className="text-2xl font-black" style={{ fontFamily: "Georgia, serif" }}>
-              {a.name}
-            </div>
-            <div className="text-sm text-white/40 my-1">+</div>
-            <div className="text-2xl font-black" style={{ fontFamily: "Georgia, serif" }}>
-              {b.name}
-            </div>
-          </div>
+              <div className="mt-4">
+                <div className="text-2xl font-black" style={{ fontFamily: "Georgia, serif" }}>
+                  {info.cityA?.name} + {info.winner.name}
+                </div>
+              </div>
 
-          <p className="mt-5 text-sm text-white/60 leading-6">
-            The cohort ranked these two City A finalists highest. They advance to the next round.
-          </p>
+              <p className="mt-5 text-sm text-white/60 leading-6">
+                The cohort ranked this City B pairing highest. It locks the route with {info.cityA?.name}.
+              </p>
+            </>
+          )}
 
           {TRIP_DATE && <TripCountdownMini tripDate={TRIP_DATE} />}
 
@@ -2301,7 +2394,7 @@ function TripCountdownMini({ tripDate }) {
 }
 
 /* ── Bottom console: browse candidates on the globe ──────────────────────────── */
-function DestinationConsole({ countries, activeCountry, winnerNames = [], ranked = [], onSelectCountry, briefs = [] }) {
+function DestinationConsole({ countries, activeCountry, winnerNames = [], needsRunoff = false, ranked = [], onSelectCountry, briefs = [] }) {
   return (
     <div
       className="rounded-[1.5rem] border p-2.5 backdrop-blur-2xl sm:rounded-[1.8rem] sm:p-3"
@@ -2349,11 +2442,11 @@ function DestinationConsole({ countries, activeCountry, winnerNames = [], ranked
             >
               <div className="flex items-center justify-between gap-2">
                 <span className="text-lg">{countryIcon(country)}</span>
-                {finalist && <span className="text-[9px] font-black">TOP 2</span>}
+                {finalist && <span className="text-[9px] font-black">{needsRunoff ? "RUNOFF" : "WINNER"}</span>}
                 {!finalist && onBallot && <span className="text-[9px] font-black text-white/45">RANKED</span>}
               </div>
               <div className="mt-1 truncate text-sm font-black">{country.name}</div>
-              <div className="truncate text-[10px] opacity-60">{country.region}</div>
+              <div className="truncate text-[10px] opacity-60">{country.cityA ? `+ ${country.cityA.name}` : country.region}</div>
               {hasBrief && (
                 <div
                   className="mt-1.5 rounded-full px-2 py-0.5 text-[8px] font-black uppercase tracking-[0.14em] inline-block"
