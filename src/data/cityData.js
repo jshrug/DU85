@@ -1,14 +1,14 @@
-// City A + City B pairing champions — reset Jul 12 for the new round now that
-// City A is down to Nairobi/Istanbul. null = still open. Keys must match the
-// combo names buildCombos() produces ("<City A> + <City B>").
+// City A + City B pairing champions — claims as of Jul 16 now that City A is
+// down to Nairobi/Istanbul. null = still open. Keys must match the combo names
+// buildCombos() produces ("<City A> + <City B>").
 export const CITY_CHAMPIONS = {
-  "Nairobi + Mumbai":     null,
-  "Nairobi + Istanbul":   null,
-  "Nairobi + Kigali":     null,
-  "Nairobi + Cape Town":  null,
+  "Nairobi + Mumbai":     "Joseph, Jen",
+  "Nairobi + Istanbul":   "Joi, Joseph, Oswaldo, Jen",
+  "Nairobi + Kigali":     "Bri, Dani, Kelly",
+  "Nairobi + Cape Town":  "Mike Lynch",
   "Istanbul + Budapest":  null,
   "Istanbul + Belgrade":  null,
-  "Istanbul + Tunis":     null,
+  "Istanbul + Tunis":     "Adriel, Chelsea",
   "Istanbul + Warsaw":    null,
 };
 
