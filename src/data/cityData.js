@@ -9,7 +9,7 @@ export const CITY_CHAMPIONS = {
   "Istanbul + Budapest":  null,
   "Istanbul + Belgrade":  null,
   "Istanbul + Tunis":     "Adriel, Chelsea",
-  "Istanbul + Warsaw":    null,
+  "Istanbul + Krakow":    null,
 };
 
 
@@ -148,25 +148,25 @@ export const COMPANION_CITIES = [
     porter: "Tunis puts the cohort in North Africa — a region most MBA programs completely ignore. Adds an entirely different lens on emerging markets and trade culture, right on the Mediterranean.",
   },
   {
-    name: "Warsaw",
+    name: "Krakow",
     region: "Europe",
     flag: "PL",
     emoji: "🇵🇱",
     score: 17,
-    lat: 52.2297,
-    lng: 21.0122,
-    image: "https://picsum.photos/seed/global85-warsaw/1200/800",
-    note: "Poland · Fast-growing EU economy, tech, resilience story",
+    lat: 50.0647,
+    lng: 19.945,
+    image: "https://picsum.photos/seed/global85-krakow/1200/800",
+    note: "Poland · Global business services hub, medieval capital, AI-era reinvention",
     fit: "Medium",
     cost: "$$",
     travel: "Short",
-    reasons: ["Fast-growing EU economy", "Tech hub", "Resilience story", "Manufacturing"],
-    porter: "Warsaw is the fastest-growing major economy in the EU and a tech hub most Americans overlook. Adds a compelling Central European growth story to an Istanbul anchor.",
+    reasons: ["Global business services hub", "AI disruption live case", "Intact medieval capital", "Deep talent pipeline"],
+    porter: "Krakow is Poland's global business services capital, with more than 105,000 IT and shared services jobs, and it is living through the exact disruption worth studying: AI is displacing volume BPO work while the city pivots toward analytics, cybersecurity, and cloud. Turkish Airlines flies Istanbul to Krakow nonstop in about 2h20m, and unlike Warsaw the city came through WWII physically intact.",
   },
 ];
 
 export const CITY_B_MAP = {
-  "Istanbul": ["Budapest", "Belgrade", "Tunis", "Warsaw"],
+  "Istanbul": ["Budapest", "Belgrade", "Tunis", "Krakow"],
   "Nairobi": ["Mumbai", "Istanbul", "Kigali", "Cape Town"],
 };
 
