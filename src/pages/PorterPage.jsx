@@ -898,7 +898,7 @@ function CountryBriefTab({ briefs, onBriefSubmitted, prefillCountry = "", prefil
               Submit Brief
             </h2>
             <p className="text-[11px] text-white/38 mt-1 leading-4">
-              Briefs due July 8 · Porter loads them automatically
+              Briefs due July 15 · Porter loads them automatically
             </p>
           </div>
           <div
@@ -1111,7 +1111,7 @@ function CountryBriefTab({ briefs, onBriefSubmitted, prefillCountry = "", prefil
             No briefs yet. Yours could be the first. Fill out the form above to send Porter your city intel.
           </p>
           <p className="text-[10px] text-white/28 uppercase tracking-[0.18em] mt-2">
-            Teams have until July 8.
+            Teams have until July 15.
           </p>
         </div>
       )}

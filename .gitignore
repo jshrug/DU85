@@ -29,3 +29,4 @@ dist-ssr
 dev-dist/
 
 .vercel
+.env*
