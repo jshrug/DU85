@@ -5,7 +5,7 @@ import remarkGfm from "remark-gfm";
 import mammoth from "mammoth";
 import { COLORS, COHORT_SIZE } from "../constants.js";
 import { ANCHOR_COUNTRIES, CITY_CHAMPIONS, COHORT_EVENTS } from "../data/cityData.js";
-import { getCountryByName } from "../utils/voteUtils.js";
+import { getCountryByName, briefKeysForComboName, normalizeBriefKey } from "../utils/voteUtils.js";
 import SectionTitle from "../components/SectionTitle.jsx";
 import { useAuth } from "../lib/AuthContext.jsx";
 import { fetchCountryBriefs, submitCountryBrief, loadConversation, saveConversation } from "../lib/porterMemory.js";
@@ -772,9 +772,8 @@ function CountryBriefTab({ briefs, onBriefSubmitted, prefillCountry = "", prefil
   // View an existing brief from ?view=NAME: scroll to it and briefly highlight, once.
   useEffect(() => {
     if (viewedRef.current || !viewCountry || briefs.length === 0) return;
-    const target = briefs.find(
-      (b) => (b.country_name || "").toLowerCase() === viewCountry.toLowerCase()
-    );
+    const keys = briefKeysForComboName(viewCountry);
+    const target = briefs.find((b) => keys.includes(normalizeBriefKey(b.country_name)));
     if (!target) return;
     viewedRef.current = true;
     const el = cardRefs.current[target.id];

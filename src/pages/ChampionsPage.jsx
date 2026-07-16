@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { COLORS } from "../constants.js";
 import { CITY_CHAMPIONS, ANCHOR_COUNTRIES } from "../data/cityData.js";
-import { countryIcon, buildCombos } from "../utils/voteUtils.js";
+import { countryIcon, buildCombos, normalizeBriefKey, briefKeysForCombo } from "../utils/voteUtils.js";
 import { fetchCountryBriefs } from "../lib/porterMemory.js";
 import SectionTitle from "../components/SectionTitle.jsx";
 
@@ -11,7 +11,8 @@ export default function ChampionsPage() {
   const combos = buildCombos(ANCHOR_COUNTRIES);
   const pending = combos.filter((c) => !CITY_CHAMPIONS[c.name]);
 
-  // Case-insensitive lookup of city names that already have a submitted brief.
+  // Normalized lookup of names that already have a submitted brief, so either
+  // filing convention ("Nairobi + Cape Town" or 'Cape Town "B"') is recognized.
   const [briefedCities, setBriefedCities] = useState(() => new Set());
 
   useEffect(() => {
@@ -21,7 +22,7 @@ export default function ChampionsPage() {
         if (!active) return;
         const set = new Set(
           (rows || [])
-            .map((r) => (r?.country_name || "").trim().toLowerCase())
+            .map((r) => normalizeBriefKey(r?.country_name))
             .filter(Boolean)
         );
         setBriefedCities(set);
@@ -58,7 +59,7 @@ export default function ChampionsPage() {
             .filter((combo) => combo.cityA.name === anchorName)
             .map((combo) => {
               const team = CITY_CHAMPIONS[combo.name];
-              const hasBrief = briefedCities.has(combo.name.trim().toLowerCase());
+              const hasBrief = briefKeysForCombo(combo).some((k) => briefedCities.has(k));
               const encoded = encodeURIComponent(combo.name);
 
               return (

@@ -107,6 +107,38 @@ export function countryIcon(country) {
 // name (e.g. "Kigali") or the country name (e.g. "Rwanda") teams associate it
 // with for a plain City A country — match on both so a brief doesn't silently
 // fail to show up over a naming mismatch.
+// Briefs are meant to be filed under the full combo name ("Nairobi + Cape Town"),
+// but teams file them under the City B name alone too, usually tagged with the
+// City B designator (e.g. 'Cape Town "B"'). Normalize both sides so a brief is
+// recognized whichever form its team used.
+export function normalizeBriefKey(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/["'‘’“”]/g, "")
+    .replace(/\bcity\s*b\b/g, " ")
+    .replace(/[^a-z0-9+]+/g, " ")
+    .replace(/\s+b\s*$/, "")
+    .replace(/\s*\+\s*/g, " + ")
+    .trim();
+}
+
+// Every name a team might reasonably file this combo's brief under.
+export function briefKeysForCombo(combo) {
+  const keys = [combo?.name];
+  const cityB = combo?.cityB;
+  if (cityB?.name) {
+    keys.push(cityB.name);
+    const countryName = cityB.note?.split(" · ")[0]?.trim();
+    if (countryName) keys.push(countryName);
+  }
+  return Array.from(new Set(keys.map(normalizeBriefKey).filter(Boolean)));
+}
+
+export function briefKeysForComboName(comboName) {
+  const combo = buildCombos(ANCHOR_COUNTRIES).find((c) => c.name === comboName);
+  return combo ? briefKeysForCombo(combo) : [normalizeBriefKey(comboName)].filter(Boolean);
+}
+
 export function briefMatchNames(country) {
   if (!country) return [];
   if (country.comboName) return [country.comboName];
