@@ -6,8 +6,8 @@ export const CITY_CHAMPIONS = {
   "Nairobi + Istanbul":   "Joi, Joseph, Oswaldo, Jen",
   "Nairobi + Kigali":     "Bri, Dani, Kelly",
   "Nairobi + Cape Town":  "Mike Lynch",
-  "Istanbul + Budapest":  null,
-  "Istanbul + Belgrade":  null,
+  "Istanbul + Budapest":  "Bri, Adriel",
+  "Istanbul + Belgrade":  "Bri, Adriel",
   "Istanbul + Tunis":     "Adriel, Chelsea",
   "Istanbul + Krakow":    null,
 };
@@ -165,8 +165,9 @@ export const COMPANION_CITIES = [
   },
 ];
 
+// Votable pairs. Istanbul + Krakow dropped (no champion); all others active.
 export const CITY_B_MAP = {
-  "Istanbul": ["Budapest", "Belgrade", "Tunis", "Krakow"],
+  "Istanbul": ["Budapest", "Belgrade", "Tunis"],
   "Nairobi": ["Mumbai", "Istanbul", "Kigali", "Cape Town"],
 };
 
