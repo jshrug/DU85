@@ -2,20 +2,20 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 const CURRENCIES = [
   {
-    code: "SGD",
-    name: "Singapore Dollar",
-    symbol: "$",
-    locale: "en-SG",
+    code: "TRY",
+    name: "Turkish Lira",
+    symbol: "₺",
+    locale: "tr-TR",
     decimals: 2,
-    hint: "S$1 is roughly US$0.75. A quick estimate is divide by 4 and multiply by 3.",
+    hint: "Roughly 40 lira to US$1. Treat it as a live rate, not a rule of thumb.",
   },
   {
-    code: "VND",
-    name: "Vietnamese Dong",
-    symbol: "₫",
-    locale: "vi-VN",
+    code: "KES",
+    name: "Kenyan Shilling",
+    symbol: "KSh",
+    locale: "en-KE",
     decimals: 0,
-    hint: "25,000 VND is roughly US$1. Drop four zeros and divide by 2.5 for a fast estimate.",
+    hint: "Roughly 130 shillings to US$1. Drop two zeros for a fast US estimate, then adjust.",
   },
 ];
 

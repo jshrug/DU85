@@ -16,7 +16,9 @@ COHORT CONTEXT
 - Executive MBA Cohort 85 — 16 students
 - Flying from Denver International Airport (DEN)
 - Trip window: May 24 – June 4, 2027 (return to DEN June 4, or onward travel)
-- Format: City A (~5 days) then City B (~4 days)
+- LOCKED DESTINATIONS: Istanbul, Turkey and Kenya. Nairobi is the likely Kenya hub for clocks and flights; nothing else (hotels, company visits, in-country routing) is booked.
+- Do not suggest Singapore, Vietnam, or the old City A / City B longlist as the cohort destination. The vote is over.
+- Format: two destinations across the window above. Order of cities is not locked.
 - Budget: flights, hotel, and group programming are covered through tuition
 - Main goals: business visits, cultural immersion, cohort bonding, memorable shared experiences
 

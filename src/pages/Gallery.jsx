@@ -2,11 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { subscribePhotos, uploadPhoto, deletePhoto, toggleLike } from "../lib/gallery";
 import { getMemberDisplayName } from "../lib/members";
 import { useAuth } from "../lib/AuthContext";
+import { DESTINATIONS, destinationLabel } from "../data/trip.js";
 
 const CITIES = [
   { key: "all", label: "All Photos" },
-  { key: "singapore", label: "Singapore" },
-  { key: "vietnam", label: "Vietnam" },
+  ...DESTINATIONS.map((d) => ({ key: d.slug, label: d.name })),
 ];
 
 export default function Gallery({ isAdmin }) {
@@ -17,7 +17,7 @@ export default function Gallery({ isAdmin }) {
   const [lightbox, setLightbox] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadCity, setUploadCity] = useState("singapore");
+  const [uploadCity, setUploadCity] = useState(DESTINATIONS[0].slug);
   const [error, setError] = useState(null);
   const fileInputRef = useRef(null);
 
@@ -133,8 +133,9 @@ export default function Gallery({ isAdmin }) {
           disabled={uploading}
           className="bg-white/10 text-white text-sm rounded-lg px-3 py-2 border border-white/20 focus:outline-none focus:border-[#BA0C2F]"
         >
-          <option value="singapore">Singapore</option>
-          <option value="vietnam">Vietnam</option>
+          {DESTINATIONS.map((d) => (
+            <option key={d.slug} value={d.slug}>{d.name}</option>
+          ))}
         </select>
 
         <input
@@ -278,7 +279,7 @@ function Lightbox({ photo, isAdmin, userUid, onClose, onDelete, onLike }) {
         year: "numeric",
       })
     : "";
-  const cityLabel = photo.city === "singapore" ? "Singapore" : "Vietnam";
+  const cityLabel = destinationLabel(photo.city, { withEmoji: false }) || photo.city || "";
   const likeCount = (photo.likes || []).length;
   const liked = (photo.likes || []).includes(userUid);
 

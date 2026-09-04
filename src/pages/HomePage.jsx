@@ -2,14 +2,17 @@ import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { COLORS, COHORT_SIZE, TRIP_DATE } from "../constants.js";
 import { COHORT_EVENTS } from "../data/cityData.js";
-import { timeUntilDeparture, getCountryByName, countryIcon } from "../utils/voteUtils.js";
+import { DESTINATIONS, TRIP_WINDOW } from "../data/trip.js";
+import { timeUntilDeparture } from "../utils/voteUtils.js";
 import useLockedDestinations from "../hooks/useLockedDestinations.js";
 import useCastCount from "../hooks/useCastCount.js";
 import SectionTitle from "../components/SectionTitle.jsx";
 import EventMonthGrid from "../components/EventMonthGrid.jsx";
 import { useAuth } from "../lib/AuthContext.jsx";
+import { subscribeExplore } from "../lib/explore.js";
+import { isTripReady, subscribeCohortMembers } from "../lib/members.js";
 
-function TripCountdownSection({ tripDate, anchorWinner, companionWinner }) {
+function TripCountdownSection({ tripDate }) {
   const [timeLeft, setTimeLeft] = useState(null);
 
   useEffect(() => {
@@ -28,8 +31,6 @@ function TripCountdownSection({ tripDate, anchorWinner, companionWinner }) {
   }, [tripDate]);
 
   if (!timeLeft) return null;
-  const aw = getCountryByName(anchorWinner);
-  const cw = getCountryByName(companionWinner);
 
   return (
     <section className="mx-5 mt-5">
@@ -61,23 +62,17 @@ function TripCountdownSection({ tripDate, anchorWinner, companionWinner }) {
           </div>
 
           <div className="flex items-center gap-3 mt-4">
-            {aw && (
-              <div
-                className="flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-black"
-                style={{ borderColor: "rgba(243,213,138,0.22)", background: "rgba(196,150,42,0.08)", color: COLORS.champagneLight }}
-              >
-                {countryIcon(aw)} {aw.name}
+            {DESTINATIONS.map((d, i) => (
+              <div key={d.slug} className="flex items-center gap-3">
+                {i > 0 && <span className="text-white/30 text-xs">+</span>}
+                <div
+                  className="flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-black"
+                  style={{ borderColor: "rgba(243,213,138,0.22)", background: "rgba(196,150,42,0.08)", color: COLORS.champagneLight }}
+                >
+                  {d.emoji} {d.name}
+                </div>
               </div>
-            )}
-            {aw && cw && <span className="text-white/30 text-xs">+</span>}
-            {cw && (
-              <div
-                className="flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-black"
-                style={{ borderColor: "rgba(243,213,138,0.22)", background: "rgba(196,150,42,0.08)", color: COLORS.champagneLight }}
-              >
-                {countryIcon(cw)} {cw.name}
-              </div>
-            )}
+            ))}
           </div>
         </div>
       </div>
@@ -94,6 +89,8 @@ export default function HomePage({ onAsk }) {
   const { castCount } = useCastCount();
   const [timeLeft, setTimeLeft] = useState(timeUntilDeparture);
   const [showCalendar, setShowCalendar] = useState(false);
+  const [exploreItems, setExploreItems] = useState([]);
+  const [members, setMembers] = useState([]);
 
   useEffect(() => {
     const midnight = new Date();
@@ -102,16 +99,28 @@ export default function HomePage({ onAsk }) {
     return () => clearTimeout(t);
   }, [timeLeft]);
 
+  useEffect(() => subscribeExplore({}, setExploreItems), []);
+  useEffect(() => subscribeCohortMembers(setMembers), []);
+
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const nextEvent = COHORT_EVENTS.find((e) => e.fullDate >= today);
-  const daysToNext = nextEvent ? Math.ceil((nextEvent.fullDate - today) / 86400000) : null;
-  const voteLabel = routeLocked ? "Route locked" : "Voting open";
+  const depart = new Date(`${TRIP_WINDOW.departDenver}T00:00:00`);
+  const daysToNext = nextEvent
+    ? Math.ceil((nextEvent.fullDate - today) / 86400000)
+    : Math.ceil((depart - today) / 86400000);
+  const nextLabel = nextEvent
+    ? (daysToNext === 0 ? "Today" : `${daysToNext}d`)
+    : `${daysToNext}d`;
+  const nextTitle = nextEvent ? nextEvent.title : "Depart Denver";
+  const courseworkCount = exploreItems.filter((i) => i.category === "coursework" || i.category === "both").length;
+  const culturalCount = exploreItems.filter((i) => i.category === "cultural" || i.category === "both").length;
+  const readyCount = members.filter(isTripReady).length;
 
   return (
     <main className="py-5">
       {routeLocked && TRIP_DATE && (
-        <TripCountdownSection tripDate={TRIP_DATE} anchorWinner={anchorWinner} companionWinner={companionWinner} />
+        <TripCountdownSection tripDate={TRIP_DATE} />
       )}
 
       {/* Greeting + countdown */}
@@ -178,7 +187,7 @@ export default function HomePage({ onAsk }) {
             </h1>
 
             <p className="mt-3 text-white/75 text-sm leading-6">
-              Porter, destination votes, trip planning, and everything the cohort needs on the road.
+              Istanbul and Kenya. Docs, roster, and the interest board live here so the cohort is not hunting WhatsApp.
             </p>
 
             <div className="grid grid-cols-2 gap-3 mt-5">
@@ -233,20 +242,56 @@ export default function HomePage({ onAsk }) {
         </section>
 
         <section className="mt-5 grid grid-cols-2 gap-3">
-          <FeatureTile icon="🗳️" label="Destination Vote" value={voteLabel} onClick={() => navigate("/votes")} />
           <FeatureTile
             icon="📅"
-            label="Next Key Date"
-            value={daysToNext !== null ? (daysToNext === 0 ? "Today" : `${daysToNext}d`) : "—"}
+            label="Next date"
+            value={nextLabel}
+            hint={nextTitle}
             onClick={() => setShowCalendar(true)}
+          />
+          <FeatureTile
+            icon="🗺️"
+            label="Interest board"
+            value={`${courseworkCount} / ${culturalCount}`}
+            hint="Coursework / cultural"
+            onClick={() => navigate("/explore")}
+          />
+          <FeatureTile
+            icon="🪪"
+            label="Trip ready"
+            value={`${readyCount} of ${members.length || COHORT_SIZE}`}
+            hint="Passport, visas, vaccines"
+            onClick={() => navigate("/roster")}
+          />
+          <FeatureTile
+            icon="📎"
+            label="Docs shelf"
+            value="Shared files"
+            hint="The actual packet"
+            onClick={() => navigate("/docs")}
           />
         </section>
 
         <section className="mt-6 grid gap-3">
           <SectionTitle eyebrow="Upcoming" title="Key dates" />
-          {COHORT_EVENTS.map((event) => (
-            <SmallEventCard key={event.id} event={event} today={today} />
-          ))}
+          {COHORT_EVENTS.filter((event) => event.fullDate >= today).length === 0 ? (
+            <SmallEventCard
+              event={{
+                id: "depart",
+                source: "Trip",
+                title: "Depart Denver",
+                date: "May 24",
+                fullDate: depart,
+                detail: "XMBA 4354 window. Return June 4, or onward travel. Hotels and company visits are not booked yet.",
+                badge: "Locked",
+              }}
+              today={today}
+            />
+          ) : (
+            COHORT_EVENTS.filter((event) => event.fullDate >= today).map((event) => (
+              <SmallEventCard key={event.id} event={event} today={today} />
+            ))
+          )}
         </section>
       </div>
 
@@ -255,7 +300,7 @@ export default function HomePage({ onAsk }) {
   );
 }
 
-function FeatureTile({ icon, label, value, onClick }) {
+function FeatureTile({ icon, label, value, hint, onClick }) {
   const inner = (
     <>
       <div className="flex items-start justify-between">
@@ -266,6 +311,7 @@ function FeatureTile({ icon, label, value, onClick }) {
       <div className="mt-1 font-black" style={{ color: COLORS.champagneLight }}>
         {value}
       </div>
+      {hint && <div className="mt-1 text-[11px] text-white/40 leading-4">{hint}</div>}
     </>
   );
 

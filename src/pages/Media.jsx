@@ -1,15 +1,15 @@
 // src/pages/Media.jsx
-// Curated media links (YouTube videos + articles) for Singapore & HCMC.
+// Curated media links (YouTube videos + articles) for Istanbul and Kenya.
 // Admin-managed: admins can add and delete items. All cohort members can view.
 
 import { useState, useEffect } from "react";
 import { subscribeMedia, addMediaItem, deleteMediaItem } from "../lib/media.js";
+import { DESTINATIONS, destinationLabel } from "../data/trip.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const CITIES = [
-  { key: "all",       label: "All" },
-  { key: "singapore", label: "🇸🇬 Singapore" },
-  { key: "vietnam",   label: "🇻🇳 Vietnam" },
+  { key: "all", label: "All" },
+  ...DESTINATIONS.map((d) => ({ key: d.slug, label: destinationLabel(d.name) })),
 ];
 
 const TYPES = [
@@ -205,7 +205,7 @@ function SectionHeader({ icon, label, count }) {
 // ── Video card ────────────────────────────────────────────────────────────────
 function VideoCard({ item, isAdmin, onPlay, onDelete }) {
   const thumb = getYouTubeThumbnail(item.url);
-  const cityLabel = item.city === "singapore" ? "🇸🇬 Singapore" : "🇻🇳 Vietnam";
+  const cityLabel = destinationLabel(item.city);
 
   async function handleDelete(e) {
     e.stopPropagation();
@@ -263,7 +263,7 @@ function VideoCard({ item, isAdmin, onPlay, onDelete }) {
 
 // ── Article card ──────────────────────────────────────────────────────────────
 function ArticleCard({ item, isAdmin, onDelete }) {
-  const cityLabel = item.city === "singapore" ? "🇸🇬 Singapore" : "🇻🇳 Vietnam";
+  const cityLabel = destinationLabel(item.city);
 
   async function handleDelete(e) {
     e.stopPropagation();
@@ -370,7 +370,7 @@ function VideoLightbox({ url, onClose }) {
 // ── Add media modal (admin only) ──────────────────────────────────────────────
 function AddMediaModal({ onClose, onSave }) {
   const [type, setType]         = useState("video");
-  const [city, setCity]         = useState("singapore");
+  const [city, setCity]         = useState(DESTINATIONS[0].slug);
   const [title, setTitle]       = useState("");
   const [url, setUrl]           = useState("");
   const [description, setDesc]  = useState("");
@@ -434,15 +434,15 @@ function AddMediaModal({ onClose, onSave }) {
           <div>
             <label className="block text-xs font-semibold text-white/50 mb-1.5 uppercase tracking-wider">City</label>
             <div className="flex gap-2">
-              {[{ key: "singapore", label: "🇸🇬 Singapore" }, { key: "vietnam", label: "🇻🇳 Vietnam" }].map((c) => (
+              {DESTINATIONS.map((c) => (
                 <button
-                  key={c.key}
-                  onClick={() => setCity(c.key)}
+                  key={c.slug}
+                  onClick={() => setCity(c.slug)}
                   className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    city === c.key ? "bg-white/20 text-white" : "bg-white/8 text-white/50 hover:bg-white/15"
+                    city === c.slug ? "bg-white/20 text-white" : "bg-white/8 text-white/50 hover:bg-white/15"
                   }`}
                 >
-                  {c.label}
+                  {destinationLabel(c.name)}
                 </button>
               ))}
             </div>
@@ -454,7 +454,7 @@ function AddMediaModal({ onClose, onSave }) {
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder={type === "video" ? "e.g. Singapore: A Food Paradise" : "e.g. The Ultimate Guide to HCMC"}
+              placeholder={type === "video" ? "e.g. Istanbul street food walk" : "e.g. Nairobi startup scene"}
               className="w-full bg-white/10 border border-white/15 rounded-lg px-3 py-2.5 text-white text-sm placeholder-white/30 focus:outline-none focus:border-[#BA0C2F]"
             />
           </div>

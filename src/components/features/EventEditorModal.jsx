@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { createEvent, updateEvent, archiveEvent } from "../../lib/events";
+import { DESTINATION_NAMES, DEFAULT_DESTINATION, coerceDestination } from "../../data/trip.js";
 
-const CITIES = ["Singapore", "Ho Chi Minh City"];
+const CITIES = DESTINATION_NAMES;
 
 function toDateTimeLocal(tsOrDate) {
   if (!tsOrDate) return "";
@@ -19,7 +20,7 @@ export default function EventEditorModal({ open, onClose, defaultCity, event, pr
   const isEdit = !!event?.id;
 
   const [title, setTitle] = useState("");
-  const [city, setCity] = useState(defaultCity || "Singapore");
+  const [city, setCity] = useState(coerceDestination(defaultCity) || DEFAULT_DESTINATION);
   const [startTime, setStartTime] = useState("");
   const [locationName, setLocationName] = useState("");
   const [description, setDescription] = useState("");
@@ -33,13 +34,13 @@ export default function EventEditorModal({ open, onClose, defaultCity, event, pr
 
     if (isEdit) {
       setTitle(event.title || "");
-      setCity(event.city || defaultCity || "Singapore");
+      setCity(coerceDestination(event.city || defaultCity));
       setStartTime(toDateTimeLocal(event.startTime));
       setLocationName(event.locationName || "");
       setDescription(event.description || "");
     } else {
       setTitle(prefill?.title || "");
-      setCity(prefill?.city || defaultCity || "Singapore");
+      setCity(coerceDestination(prefill?.city || defaultCity));
 
       const d = new Date();
       d.setHours(18, 0, 0, 0);
@@ -136,7 +137,7 @@ export default function EventEditorModal({ open, onClose, defaultCity, event, pr
                 }`}
                 disabled={saving}
               >
-                {c === "Ho Chi Minh City" ? "HCMC" : "Singapore"}
+                {c}
               </button>
             ))}
           </div>

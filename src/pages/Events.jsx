@@ -1,18 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../lib/AuthContext";
-import { subscribeMember } from "../lib/members";
 import { subscribeEventsByCity, subscribeRsvps } from "../lib/events";
 import EventCard from "../components/features/EventCard.jsx";
 import EventEditorModal from "../components/features/EventEditorModal.jsx";
+import { DESTINATION_NAMES, DEFAULT_DESTINATION } from "../data/trip.js";
 
-const CITIES = ["Singapore", "Ho Chi Minh City"];
-const LS_KEY = "global84_lastViewedEventsAt";
+const CITIES = DESTINATION_NAMES;
+const LS_KEY = "global85_lastViewedEventsAt";
 
 export default function Events({ onViewed }) {
   const { user } = useAuth();
   const [viewedAt] = useState(() => Date.now());
-  const [member, setMember] = useState(null);
-  const [selectedCity, setSelectedCity] = useState("Singapore");
+  const [selectedCity, setSelectedCity] = useState(DEFAULT_DESTINATION);
   const [events, setEvents] = useState([]);
   const [allRsvps, setAllRsvps] = useState({});
   const [openEditor, setOpenEditor] = useState(false);
@@ -23,12 +22,7 @@ export default function Events({ onViewed }) {
     onViewed?.();
   }, [onViewed, viewedAt]);
 
-  useEffect(() => {
-    if (!user?.id) return;
-    return subscribeMember(user.id, setMember);
-  }, [user?.id]);
-
-  const city = member?.defaultCity || selectedCity;
+  const city = selectedCity;
 
   useEffect(() => subscribeEventsByCity(city, setEvents), [city]);
 
@@ -105,7 +99,7 @@ export default function Events({ onViewed }) {
                 : "bg-surface-border/60 text-ink-sub hover:bg-surface-border dark:bg-surface-darkBorder dark:text-ink-subOnDark"
             }`}
           >
-            {option === "Ho Chi Minh City" ? "HCMC" : "Singapore"}
+            {option}
           </button>
         ))}
       </div>

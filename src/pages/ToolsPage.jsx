@@ -4,14 +4,14 @@ import { COLORS } from "../constants.js";
 // ── Trip Tools ────────────────────────────────────────────────────────────────
 const TRIP_CURRENCIES = [
   { code: "USD", name: "US Dollar",        flag: "🇺🇸" },
+  { code: "TRY", name: "Turkish Lira",     flag: "🇹🇷" },
+  { code: "KES", name: "Kenyan Shilling",  flag: "🇰🇪" },
   { code: "EUR", name: "Euro",             flag: "🇪🇺" },
   { code: "GBP", name: "British Pound",    flag: "🇬🇧" },
   { code: "CLP", name: "Chilean Peso",     flag: "🇨🇱" },
   { code: "KRW", name: "S. Korean Won",    flag: "🇰🇷" },
   { code: "SGD", name: "Singapore Dollar", flag: "🇸🇬" },
-  { code: "TRY", name: "Turkish Lira",     flag: "🇹🇷" },
   { code: "ZAR", name: "S. African Rand",  flag: "🇿🇦" },
-  { code: "KES", name: "Kenyan Shilling",  flag: "🇰🇪" },
   { code: "RWF", name: "Rwandan Franc",    flag: "🇷🇼" },
   { code: "ARS", name: "Argentine Peso",   flag: "🇦🇷" },
   { code: "VND", name: "Vietnamese Dong",  flag: "🇻🇳" },
@@ -25,11 +25,11 @@ const TRIP_CURRENCIES = [
 ];
 
 const TRIP_LANGS = [
+  { code: "tr", name: "Turkish",    flag: "🇹🇷" },
+  { code: "sw", name: "Swahili",    flag: "🇰🇪" },
   { code: "es", name: "Spanish",    flag: "🇪🇸" },
   { code: "ko", name: "Korean",     flag: "🇰🇷" },
-  { code: "tr", name: "Turkish",    flag: "🇹🇷" },
   { code: "pt", name: "Portuguese", flag: "🇵🇹" },
-  { code: "sw", name: "Swahili",    flag: "🇰🇪" },
   { code: "th", name: "Thai",       flag: "🇹🇭" },
   { code: "vi", name: "Vietnamese", flag: "🇻🇳" },
   { code: "ms", name: "Malay",      flag: "🇲🇾" },

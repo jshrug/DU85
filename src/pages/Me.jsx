@@ -12,15 +12,21 @@ import {
   formatFileSize,
   ALLOWED_EXTENSIONS,
 } from "../lib/userFiles";
+import { DESTINATION_NAMES, DEFAULT_DESTINATION, coerceDestination } from "../data/trip.js";
 
-const CITIES = ["Singapore", "Ho Chi Minh City"];
+const CITIES = DESTINATION_NAMES;
 
 export default function Me() {
   const { user } = useAuth();
 
   const [member, setMember] = useState(null);
   const [displayName, setDisplayName] = useState("");
-  const [defaultCity, setDefaultCity] = useState("Singapore");
+  const [defaultCity, setDefaultCity] = useState(DEFAULT_DESTINATION);
+  const [passportValid, setPassportValid] = useState("unknown");
+  const [visaTurkey, setVisaTurkey] = useState("unknown");
+  const [visaKenya, setVisaKenya] = useState("unknown");
+  const [vaccinesStarted, setVaccinesStarted] = useState("unknown");
+  const [roomPreference, setRoomPreference] = useState("unknown");
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
@@ -39,7 +45,12 @@ export default function Me() {
     const unsub = subscribeMember(user.id, (m) => {
       setMember(m);
       setDisplayName(m?.displayName || "Member");
-      setDefaultCity(m?.defaultCity || "Singapore");
+      setDefaultCity(coerceDestination(m?.defaultCity));
+      setPassportValid(m?.passportValid || "unknown");
+      setVisaTurkey(m?.visaTurkey || "unknown");
+      setVisaKenya(m?.visaKenya || "unknown");
+      setVaccinesStarted(m?.vaccinesStarted || "unknown");
+      setRoomPreference(m?.roomPreference || "unknown");
     });
 
     return () => unsub();
@@ -63,7 +74,15 @@ export default function Me() {
 
     setSaving(true);
     try {
-      await updateMyProfile(user.id, { displayName, defaultCity });
+      await updateMyProfile(user.id, {
+        displayName,
+        defaultCity,
+        passportValid,
+        visaTurkey,
+        visaKenya,
+        vaccinesStarted,
+        roomPreference,
+      });
       setMsg("Saved.");
     } catch (e) {
       setErr(e?.message || "Could not save profile.");
@@ -171,6 +190,33 @@ export default function Me() {
                 {c}
               </option>
             ))}
+          </select>
+        </label>
+
+        <div className="pt-2 border-t border-surface-border dark:border-surface-darkBorder">
+          <div className="text-sm font-semibold text-ink-main dark:text-ink-onDark">Trip readiness</div>
+          <p className="mt-1 text-xs text-ink-sub dark:text-ink-subOnDark leading-5">
+            Status only. Do not put passport numbers or medical details here.
+          </p>
+        </div>
+
+        <StatusSelect label="Passport valid past June 4, 2027" value={passportValid} onChange={setPassportValid} />
+        <StatusSelect label="Turkey visa" value={visaTurkey} onChange={setVisaTurkey} />
+        <StatusSelect label="Kenya visa" value={visaKenya} onChange={setVisaKenya} />
+        <StatusSelect label="Vaccines started" value={vaccinesStarted} onChange={setVaccinesStarted} />
+
+        <label className="block">
+          <div className="text-xs font-semibold text-ink-sub dark:text-ink-subOnDark mb-1">
+            Room preference
+          </div>
+          <select
+            className="w-full rounded-lg border border-surface-border dark:border-surface-darkBorder bg-white dark:bg-surface-darkCard px-3 py-2 text-sm text-ink-main dark:text-ink-onDark focus:outline-none focus:ring-2 focus:ring-du-gold"
+            value={roomPreference}
+            onChange={(e) => setRoomPreference(e.target.value)}
+          >
+            <option value="unknown">Not yet</option>
+            <option value="double">Double (program default)</option>
+            <option value="single">Single (paid upgrade)</option>
           </select>
         </label>
 
@@ -295,5 +341,24 @@ export default function Me() {
         )}
       </div>
     </div>
+  );
+}
+
+function StatusSelect({ label, value, onChange }) {
+  return (
+    <label className="block">
+      <div className="text-xs font-semibold text-ink-sub dark:text-ink-subOnDark mb-1">
+        {label}
+      </div>
+      <select
+        className="w-full rounded-lg border border-surface-border dark:border-surface-darkBorder bg-white dark:bg-surface-darkCard px-3 py-2 text-sm text-ink-main dark:text-ink-onDark focus:outline-none focus:ring-2 focus:ring-du-gold"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        <option value="unknown">Not yet</option>
+        <option value="yes">Yes</option>
+        <option value="no">No</option>
+      </select>
+    </label>
   );
 }

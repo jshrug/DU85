@@ -1,8 +1,8 @@
 /**
- * Translate.jsx — Translator page for Global 84.
+ * Translate.jsx — Translator page for Global 85.
  *
- * Lets cohort members photograph signage, menus, or documents in Singapore
- * or Vietnam and receive an English translation powered by Anthropic Claude.
+ * Lets cohort members photograph signage, menus, or documents in Istanbul
+ * or Kenya and receive an English translation powered by Anthropic Claude.
  *
  * The Anthropic API key is never in the browser — all API calls are proxied
  * through a Firebase Cloud Function.
