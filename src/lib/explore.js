@@ -31,6 +31,7 @@ function mapItem(row) {
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    createdByUid: row.created_by_uid,
   };
 }
 
@@ -61,6 +62,50 @@ export function subscribeExplore({ city, category }, cb) {
   return () => { active = false; supabase.removeChannel(channel); };
 }
 
+export async function addExploreItem(fields) {
+  const user = await getCurrentUser();
+  const row = cleanRow({
+    city: fields.city,
+    type: fields.type,
+    category: fields.category,
+    name: fields.name,
+    neighborhood: fields.neighborhood,
+    notes: fields.notes,
+    googleMapsUrl: fields.googleMapsUrl || fields.url,
+    recommendedBy: fields.recommendedBy,
+    tags: fields.tags,
+  });
+  if (!row.valid) throw new Error("Name, city, type, and a coursework or cultural tag are required.");
+
+  const payload = {
+    cohort_id: COHORT_ID,
+    city: row.city,
+    type: row.type,
+    category: row.category,
+    name: row.name,
+    neighborhood: row.neighborhood,
+    hours: "",
+    price: "",
+    tags: row.tags,
+    google_maps_url: row.googleMapsUrl,
+    reservation_url: "",
+    notes: row.notes,
+    recommended_by: row.recommendedBy,
+    stable_key: makeStableKey(row),
+    status: "active",
+    created_by_uid: user.id,
+    updated_by_uid: user.id,
+  };
+
+  const { data, error } = await supabase.from("explore_items").insert(payload).select("id").single();
+  if (error) {
+    if (error.code === "42501") throw new Error("Could not save. Joe still needs to run the interest-board SQL so members can add places.");
+    if (error.code === "23505") throw new Error("That place is already on the board for this city.");
+    throw new Error(error.message);
+  }
+  return data?.id;
+}
+
 export async function deleteExploreItem(id) {
   const { error } = await supabase.from("explore_items").delete().eq("id", id);
   if (error) throw new Error(error.message);
@@ -72,28 +117,22 @@ function normalizeCity(s) {
   const v = (s || "").trim();
   if (!v) return "";
   const low = v.toLowerCase();
-  if (low === "singapore") return "Singapore";
-  if (low === "hcmc" || low === "ho chi minh" || low === "ho chi minh city") return "Ho Chi Minh City";
+  if (low === "istanbul" || low === "turkey") return "Istanbul";
+  if (low === "kenya" || low === "nairobi") return "Kenya";
   return v;
 }
 
 function normalizeType(s) {
   const v = (s || "").trim().toLowerCase();
   if (!v) return "";
-  if (v === "restaurant") return "Restaurant";
-  if (v === "coffee" || v === "cafe") return "Coffee";
-  if (v === "bar" || v === "drinks" || v === "pub") return "Bar";
-  if (v === "rooftop bar" || v === "rooftop") return "Rooftop Bar";
-  if (v === "hawker center" || v === "hawker centre" || v === "hawker" || v === "food court") return "Hawker Center";
-  if (v === "museum" || v === "gallery") return "Museum";
-  if (v === "temple" || v === "church" || v === "mosque" || v === "pagoda") return "Temple";
+  if (v === "company" || v === "site visit" || v === "business" || v === "office") return "Company";
+  if (v === "school" || v === "university" || v === "campus") return "School";
+  if (v === "restaurant" || v === "coffee" || v === "cafe" || v === "bar" || v === "hawker center") return "Restaurant";
+  if (v === "museum" || v === "gallery" || v === "arts" || v === "museum / arts") return "Museum / arts";
   if (v === "market" || v === "bazaar" || v === "night market") return "Market";
-  if (v === "shopping" || v === "mall") return "Shopping";
-  if (v === "spa" || v === "wellness" || v === "massage") return "Spa";
-  if (v === "nightlife" || v === "club" || v === "lounge") return "Nightlife";
-  if (v === "nature" || v === "park" || v === "garden") return "Nature";
-  if (v === "tour" || v === "experience") return "Tour";
-  if (v === "adventure" || v === "sport" || v === "activity") return "Adventure";
+  if (v === "neighborhood" || v === "district" || v === "walk") return "Neighborhood";
+  if (v === "tour" || v === "experience" || v === "adventure") return "Experience";
+  if (v === "other") return "Other";
   return s.trim().replace(/\w\S*/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 }
 
@@ -116,14 +155,17 @@ function makeStableKey({ city, type, name }) {
 
 function normalizeCategory(s) {
   const v = (s || "").trim().toLowerCase();
-  if (v === "dining") return "dining";
-  if (v === "activity" || v === "activities") return "activity";
+  if (v === "coursework" || v === "du" || v === "program") return "coursework";
+  if (v === "cultural" || v === "fun" || v === "visit") return "cultural";
+  if (v === "both") return "both";
+  // Legacy C84 dining/activity rows count as cultural until retagged.
+  if (v === "dining" || v === "activity" || v === "activities") return "cultural";
   return "";
 }
 
 function inferCategory(type) {
-  const DINING_TYPES = ["restaurant", "coffee", "bar", "rooftop bar", "hawker center"];
-  return DINING_TYPES.includes((type || "").toLowerCase()) ? "dining" : "activity";
+  const COURSEWORK_TYPES = ["company", "school"];
+  return COURSEWORK_TYPES.includes((type || "").toLowerCase()) ? "coursework" : "cultural";
 }
 
 function cleanRow(r) {
@@ -133,7 +175,7 @@ function cleanRow(r) {
   const rawCategory = normalizeCategory(r.category);
   const category = rawCategory || inferCategory(type);
   return {
-    valid: !!(city && type && name),
+    valid: !!(city && type && name && category),
     city, type, category, name,
     neighborhood: (r.neighborhood || "").trim(),
     hours: (r.hours || "").trim(),

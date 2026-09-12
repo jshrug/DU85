@@ -1,39 +1,13 @@
-import { useState, useEffect, useId } from "react";
-import { supabase, COHORT_ID } from "../lib/supabase.js";
+import { DESTINATIONS, ROUTE_LOCKED } from "../data/trip.js";
+
+const LOCKED = {
+  anchorWinner: DESTINATIONS[0].name,
+  companionWinner: DESTINATIONS[1].name,
+};
 
 export default function useLockedDestinations() {
-  const [locked, setLocked] = useState({ anchorWinner: null, companionWinner: null });
-  const id = useId();
-
-  useEffect(() => {
-    if (!supabase) return;
-    supabase
-      .from("cohort_state")
-      .select("anchor_winner,companion_winner")
-      .eq("cohort_id", COHORT_ID)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data)
-          setLocked({ anchorWinner: data.anchor_winner || null, companionWinner: data.companion_winner || null });
-      });
-
-    const ch = supabase
-      .channel(`home-state-${id}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "cohort_state", filter: `cohort_id=eq.${COHORT_ID}` },
-        (payload) => {
-          if (payload.new)
-            setLocked({
-              anchorWinner: payload.new.anchor_winner || null,
-              companionWinner: payload.new.companion_winner || null,
-            });
-        }
-      )
-      .subscribe();
-
-    return () => supabase.removeChannel(ch);
-  }, []);
-
-  return locked;
+  // Destinations are official. Do not wait on cohort_state; Joe can still
+  // write the row so other tools stay in sync.
+  if (ROUTE_LOCKED) return LOCKED;
+  return { anchorWinner: null, companionWinner: null };
 }

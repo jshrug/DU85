@@ -1,4 +1,6 @@
-export const TRIP_DATE = import.meta.env.VITE_TRIP_DATE || null;
+import { TRIP_START } from "./data/trip.js";
+
+export const TRIP_DATE = import.meta.env.VITE_TRIP_DATE || TRIP_START.toISOString();
 
 export const COLORS = {
   midnight: "#05050A",
@@ -16,7 +18,7 @@ export const COLORS = {
 
 export const COHORT_SIZE = 16;
 
-export const DEPARTURE_DATE = new Date("2027-05-23T00:00:00");
+export const DEPARTURE_DATE = TRIP_START;
 
 export const DRAWER_NAV = [
   { to: "/", label: "Command Center", icon: "✦", desc: "Today, alerts, and quick actions" },
@@ -26,7 +28,9 @@ export const DRAWER_NAV = [
   { to: "/city-events", label: "City Events", icon: "🎯", desc: "Events, activities, and RSVPs by city" },
   { to: "/votes", label: "Votes", icon: "🗳️", desc: "Destination chamber and trip decisions" },
   { to: "/champions", label: "Champions", icon: "🏙️", desc: "City research teams and assignments" },
-  { to: "/explore", label: "Explore", icon: "🗺️", desc: "Food, places, and plans" },
+  { to: "/explore", label: "Explore", icon: "🗺️", desc: "Coursework pins and places to visit" },
+  { to: "/docs", label: "Docs", icon: "📎", desc: "Shared files and links for the trip" },
+  { to: "/roster", label: "Roster", icon: "🪪", desc: "Passport, visa, and room status" },
   { to: "/media", label: "Media", icon: "🎬", desc: "Curated videos and articles by city" },
   { to: "/chat", label: "Chat", icon: "💬", desc: "Cohort and team channels" },
   { to: "/team", label: "Teams", icon: "👥", desc: "Groups and classmates" },

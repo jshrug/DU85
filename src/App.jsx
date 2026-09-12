@@ -19,6 +19,8 @@ const Chat          = lazy(() => import("./pages/Chat.jsx"));
 const Gallery       = lazy(() => import("./pages/Gallery.jsx"));
 const Team          = lazy(() => import("./pages/Team.jsx"));
 const Explore       = lazy(() => import("./pages/Explore.jsx"));
+const Docs          = lazy(() => import("./pages/Docs.jsx"));
+const Roster        = lazy(() => import("./pages/Roster.jsx"));
 const Me            = lazy(() => import("./pages/Me.jsx"));
 const Events        = lazy(() => import("./pages/Events.jsx"));
 const Media         = lazy(() => import("./pages/Media.jsx"));
@@ -146,10 +148,12 @@ export default function App() {
             <Route path="/chat" element={<Chat isAdmin={isAdmin} />} />
             <Route path="/gallery" element={<Gallery isAdmin={isAdmin} />} />
             <Route path="/team" element={<Team isAdmin={isAdmin} />} />
-            <Route path="/explore" element={<Explore />} />
+            <Route path="/explore" element={<Explore isAdmin={isAdmin} />} />
+            <Route path="/docs" element={<Docs isAdmin={isAdmin} />} />
+            <Route path="/roster" element={<Roster />} />
             <Route path="/me" element={<Me />} />
             <Route path="/city-events" element={<Events />} />
-            <Route path="/media" element={<Media />} />
+            <Route path="/media" element={<Media isAdmin={isAdmin} />} />
             <Route path="/currency" element={<Currency />} />
             <Route path="/translate" element={<Translate />} />
             <Route path="/explore-import" element={<ExploreImport />} />

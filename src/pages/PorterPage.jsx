@@ -915,7 +915,7 @@ function CountryBriefTab({ briefs, onBriefSubmitted, prefillCountry = "", prefil
               onChange={(e) => setCountryName(e.target.value)}
               onFocus={() => setFocusedField("country")}
               onBlur={() => setFocusedField(null)}
-              placeholder="e.g. Singapore"
+              placeholder="e.g. Istanbul"
               className="w-full rounded-xl px-4 py-2.5 text-sm placeholder:text-white/28"
               style={fieldStyle("country")}
             />

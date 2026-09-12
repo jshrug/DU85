@@ -1,5 +1,13 @@
 import { supabase, COHORT_ID } from "./supabase";
 
+export const READY_STATUSES = ["unknown", "yes", "no"];
+export const ROOM_PREFERENCES = ["unknown", "double", "single"];
+export const READY_FIELDS = ["passportValid", "visaTurkey", "visaKenya", "vaccinesStarted"];
+
+function mapStatus(value) {
+  return READY_STATUSES.includes(value) ? value : "unknown";
+}
+
 function mapMember(row) {
   if (!row) return null;
   return {
@@ -12,7 +20,16 @@ function mapMember(row) {
     teamId: row.team_id,
     createdAt: row.created_at,
     lastLoginAt: row.last_login_at,
+    passportValid: mapStatus(row.passport_valid),
+    visaTurkey: mapStatus(row.visa_turkey),
+    visaKenya: mapStatus(row.visa_kenya),
+    vaccinesStarted: mapStatus(row.vaccines_started),
+    roomPreference: ROOM_PREFERENCES.includes(row.room_preference) ? row.room_preference : "unknown",
   };
+}
+
+export function isTripReady(member) {
+  return READY_FIELDS.every((key) => member?.[key] === "yes");
 }
 
 export async function upsertMemberProfile(user) {
@@ -32,7 +49,7 @@ export async function upsertMemberProfile(user) {
       email: emailLower,
       display_name: user.user_metadata?.full_name || "Member",
       role: "member",
-      default_city: "Singapore",
+      default_city: "Istanbul",
     });
     return { created: true };
   }
@@ -75,14 +92,24 @@ export function subscribeMember(uid, cb) {
   };
 }
 
-export async function updateMyProfile(uid, { displayName, defaultCity }) {
+export async function updateMyProfile(uid, fields) {
   const patch = {};
-  if (typeof displayName === "string") patch.display_name = displayName.trim();
-  if (typeof defaultCity === "string") patch.default_city = defaultCity;
+  if (typeof fields.displayName === "string") patch.display_name = fields.displayName.trim();
+  if (typeof fields.defaultCity === "string") patch.default_city = fields.defaultCity;
+  if (READY_STATUSES.includes(fields.passportValid)) patch.passport_valid = fields.passportValid;
+  if (READY_STATUSES.includes(fields.visaTurkey)) patch.visa_turkey = fields.visaTurkey;
+  if (READY_STATUSES.includes(fields.visaKenya)) patch.visa_kenya = fields.visaKenya;
+  if (READY_STATUSES.includes(fields.vaccinesStarted)) patch.vaccines_started = fields.vaccinesStarted;
+  if (ROOM_PREFERENCES.includes(fields.roomPreference)) patch.room_preference = fields.roomPreference;
   if (Object.keys(patch).length === 0) return;
 
   const { error } = await supabase.from("members").update(patch).eq("id", uid);
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (error.code === "42703") {
+      throw new Error("Could not save. Joe still needs to run the command-center SQL for trip-readiness fields.");
+    }
+    throw new Error(error.message);
+  }
 }
 
 export function subscribeCohortMembers(cb) {
